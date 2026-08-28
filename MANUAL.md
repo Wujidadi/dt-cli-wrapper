@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-28T21:01:07+08:00
+> Last updated: 2026-08-28T22:47:36+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -36,15 +36,16 @@ dtgen -P example -p "a red cube on a table"
 # and the model must be given via --model
 dtgen -m flux_2_klein_4b_q6p.ckpt -p "a red cube on a table"
 
-# Prompt from prompts/cube.txt, output to a directory (auto-named)
-dtgen -P example --prompt-file cube -o ~/Pictures/dt/
+# Prompt from prompts/cube.txt, output into a directory
+# (created automatically when missing, file auto-named)
+dtgen -P example --prompt-file cube -o ~/Pictures/dt
 
 # Image-to-image: -i sets the input image; denoising strength and related
 # parameters live in the parameter file (e.g. strength in parameters/i2i.toml)
 dtgen -P i2i -i input.png -p "studio portrait"
 
-# Full output file name, plus extra options passed through to draw-things-cli
-dtgen -P example -p "test" -o ./pic.png -- --terminal-image
+# Extra options after "--" are passed through to draw-things-cli
+dtgen -P example -p "test" -- --terminal-image
 
 # Print the full command that would run, without executing it
 dtgen -P example -p "test" --dry-run
@@ -62,7 +63,7 @@ dtgen -P example -p "test" --dry-run
 | `--image <path>`         | `-i`  | Input image for img2img                                        |
 | `--model <model>`        | `-m`  | Model; overrides the parameter file; required without one      |
 | `--seed <n>`             | `-s`  | Random seed; overrides the parameter file; random when omitted |
-| `--output <path>`        | `-o`  | Output path; defaults to the current directory                 |
+| `--output <dir>`         | `-o`  | Output directory; created when missing; default: current dir   |
 | `--dry-run`              |       | Print the command without executing it                         |
 | Arguments after `--`     |       | Passed through to `draw-things-cli generate` verbatim          |
 
@@ -114,11 +115,13 @@ when neither provides one, the model's recommended value applies.
 - Seed precedence: `--seed` > `seed` in the parameter file > randomly generated.
   A randomly generated seed is still passed to `draw-things-cli` explicitly,
   so results are always reproducible.
-- When `--output` is a file path, it is used as-is
-  (missing parent directories are created automatically);
-  when it is a directory (an existing one, or a path ending in `/`)
-  or omitted, the file is auto-named `<unix seconds>-<seed>.<ext>`,
-  e.g. `1787847667-42.png`.
+- `--output` is always treated as a directory;
+  when it does not exist, it is created recursively (like `mkdir -p`).
+  The file is always auto-named `<unix seconds>-<seed>.<ext>`,
+  e.g. `1787847667-42.png`, so the seed is never lost —
+  `draw-things-cli` output carries no metadata (see Notes).
+  There is no custom file-name option;
+  rename afterwards with your own script if needed.
 - The auto-naming extension comes from `output_ext` in the parameter file,
   defaulting to `png`; set it to `mp4` or `mov` for video models.
 - Before running, the actual output path is printed to stderr
@@ -197,6 +200,10 @@ Local generation by default when omitted.
 
 ## Notes
 
+- Images written by `draw-things-cli` carry no generation metadata:
+  its PNG writer emits bare pixels only,
+  so the `XMP UserComment` block found in UI-generated images never appears.
+  The auto-named output file is what preserves the seed.
 - `dtgen` always passes `--output`,
   so `draw-things-cli`'s native behavior of
   "terminal preview only, no file written, when `--output` is omitted"

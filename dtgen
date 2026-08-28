@@ -114,19 +114,11 @@ def resolve_negative_prompt(args, params):
 
 def resolve_output(args, params, seed):
     ext = params.get("output_ext", "png").lstrip(".")
-    raw = args.output
-    if raw is None:
-        target_dir, filename = Path.cwd(), None
-    else:
-        path = Path(raw).expanduser()
-        if raw.endswith(os.sep) or path.is_dir():
-            target_dir, filename = path, None
-        else:
-            target_dir, filename = path.parent, path.name
-    if filename is None:
-        filename = f"{int(time.time())}-{seed}.{ext}"
+    target_dir = Path(args.output).expanduser() if args.output else Path.cwd()
+    if target_dir.exists() and not target_dir.is_dir():
+        die(f"output path exists and is not a directory: {target_dir}")
     target_dir.mkdir(parents=True, exist_ok=True)
-    return target_dir / filename
+    return target_dir / f"{int(time.time())}-{seed}.{ext}"
 
 
 def append_backend_args(cmd, backend):
@@ -192,12 +184,11 @@ def main():
     parser.add_argument("--seed", "-s", type=int,
                         help="random seed (overrides the parameter file; "
                              "randomly generated when neither specifies one)")
-    parser.add_argument("--output", "-o", metavar="<path>",
-                        help="output path (absolute or relative to the current "
-                             "directory; when a directory is given or the option is "
-                             "omitted, the file is auto-named "
-                             "\"<unix timestamp>-<seed>\"; when omitted, output goes "
-                             "to the current directory)")
+    parser.add_argument("--output", "-o", metavar="<dir>",
+                        help="output directory (absolute or relative to the current "
+                             "directory; created recursively when missing; the file "
+                             "is always auto-named \"<unix timestamp>-<seed>.<ext>\"; "
+                             "when omitted, output goes to the current directory)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the full command that would run, "
                              "without executing it")
