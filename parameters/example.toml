@@ -1,0 +1,89 @@
+# dtgen parameter file example
+# Usage: dtgen --parameter-file example (resolves to this file)
+# All keys are optional; anything omitted falls back to Draw Things'
+# recommended settings for the model.
+# The only exception is model — it must be provided either here or via --model
+
+# Model: file name, display name, hf://owner/repo, owner/repo, or a Hugging Face URL
+model = "flux_2_klein_4b_q6p.ckpt"
+
+# Default prompt / negative prompt (command-line --prompt / --prompt-file take precedence)
+# prompt = "a red cube on a table"
+# negative_prompt = "lowres, blurry"
+
+# Prefix / suffix: joined to the final prompt with ", "; useful for LoRA trigger words
+# prompt_prefix = "trigger_word"
+# prompt_suffix = "masterpiece, best quality"
+
+# Extension for auto-named outputs: png (default); use mov or mp4 for video models
+# output_ext = "png"
+
+# Sampling parameters (map to the draw-things-cli flags of the same name)
+# steps = 28
+# cfg = 4.5
+# width = 1024
+# height = 1024
+# strength = 0.35   # img2img denoising strength
+# frames = 49       # frame count for video models
+# seed = 1234567    # fixed seed; random on every run when omitted
+
+# Advanced overrides: this table is converted to JSON verbatim and passed via
+# --config-json (JSGenerationConfiguration format), covering things the
+# command-line flags do not — sampler, shift, hires fix, LoRA, and so on;
+# enums must be numbers (string names are invalid, unknown keys are silently ignored)
+#
+# sampler enum values (SamplerType, from the official config.fbs):
+# -  0: DPM++ 2M Karras (DPMPP2MKarras)
+# -  1: Euler A (EulerA)
+# -  2: DDIM
+# -  3: PLMS
+# -  4: DPM++ SDE Karras (DPMPPSDEKarras)
+# -  5: UniPC
+# -  6: LCM
+# -  7: Euler A Substep (EulerASubstep)
+# -  8: DPM++ SDE Substep (DPMPPSDESubstep)
+# -  9: TCD
+# - 10: Euler A Trailing (EulerATrailing)
+# - 11: DPM++ SDE Trailing (DPMPPSDETrailing)
+# - 12: DPM++ 2M AYS (DPMPP2MAYS)
+# - 13: Euler A AYS (EulerAAYS)
+# - 14: DPM++ SDE AYS (DPMPPSDEAYS)
+# - 15: DPM++ 2M Trailing (DPMPP2MTrailing)
+# - 16: DDIM Trailing (DDIMTrailing)
+# - 17: UniPC Trailing (UniPCTrailing)
+# - 18: UniPC AYS (UniPCAYS)
+# - 19: TCD Trailing (TCDTrailing)
+#
+# seedMode enum values (SeedMode):
+# - 0: Legacy
+# - 1: Torch CPU Compatible (TorchCpuCompatible)
+# - 2: Scale Alike (ScaleAlike)
+# - 3: NVIDIA GPU Compatible (NvidiaGpuCompatible)
+#
+# [config]
+# sampler = 17
+# seedMode = 2
+
+# Local LoRAs not registered in custom_lora.json need a version (e.g. "flux1")
+# [[config.loras]]
+# file = "my_lora_f16.ckpt"
+# weight = 0.8
+# version = "flux1"
+
+# Execution backend: local generation by default
+# [backend]
+# cloud_compute = true
+# remote = true
+# remote_url = "127.0.0.1"
+# remote_port = 7859
+# remote_tls = false
+# remote_shared_secret = ""
+# api_key = ""
+# cloud_api_base_url = ""
+# models_dir = ""
+
+# Other execution options
+# [options]
+# download_missing = true
+# disable_preview = false
+# offline = false

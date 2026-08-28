@@ -1,0 +1,13 @@
+{
+    // This file association must be set at both the Folder and Workspace levels
+    "files.associations": {
+        "**/prompts/**/*.txt": "ignore"
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": ".",
+            "envManager": "ms-python.python:system",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
+}

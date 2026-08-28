@@ -1,0 +1,39 @@
+# Image-to-image preset: based on default.toml, only strength differs
+# Usage: dtgen -P i2i -i input.png [-p "..."]
+# The input image is scaled proportionally, then center-cropped to width x height;
+# adjust width / height below to match the input image's aspect ratio
+# so that important content is not cropped away
+model = "z_image_turbo_1.0_q8p.ckpt"
+
+negative_prompt = "wrong anatomy, extra limbs, more than two hands, more than two feet, deformed limbs, overexposed, plain face, average face, typical AI face, generic face, identical facial features, cloned features, generic face shape"
+
+width = 1280
+height = 1280
+steps = 8
+cfg = 1.0
+
+# Denoising strength 0-1: higher departs further from the input
+# (1.0 is equivalent to pure text-to-image);
+# 0.3-0.4 for light touch-ups, 0.5-0.6 for moderate changes, 0.7+ for heavy repaints
+strength = 0.5
+
+[config]
+sampler = 17                         # UniPC Trailing
+seedMode = 2                         # Scale Alike
+shift = 3.0
+resolutionDependentShift = false
+sharpness = 0.0
+maskBlur = 1.5
+maskBlurOutset = 0
+preserveOriginalAfterInpaint = true
+colorCalibration = "none"
+hiresFix = false
+tiledDecoding = false
+tiledDiffusion = false
+batchSize = 1
+batchCount = 1
+upscaler = ""                        # empty string = disabled
+refinerModel = ""
+faceRestoration = ""
+loras = []
+controls = []

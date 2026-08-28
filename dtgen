@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Wrapper for draw-things-cli generate: parameters live in TOML files, prompt and output path come from the command line"""
+
+import argparse
+import json
+import os
+import random
+import shlex
+import sys
+import time
+import tomllib
+from pathlib import Path
+
+# Resolve to the tool's real directory even when run through a symlink
+TOOL_DIR = Path(__file__).resolve().parent
+PARAMETERS_DIR = TOOL_DIR / "parameters"
+PROMPTS_DIR = TOOL_DIR / "prompts"
+
+KNOWN_TOP_KEYS = {
+    "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
+    "output_ext", "steps", "cfg", "width", "height", "frames", "strength",
+    "seed", "backend", "options", "config",
+}
+SAMPLING_FLAGS = {
+    "steps": "--steps",
+    "cfg": "--cfg",
+    "width": "--width",
+    "height": "--height",
+    "frames": "--frames",
+    "strength": "--strength",
+}
+BACKEND_STRING_FLAGS = {
+    "remote_url": "--remote-url",
+    "remote_port": "--remote-port",
+    "remote_shared_secret": "--remote-shared-secret",
+    "api_key": "--api-key",
+    "cloud_api_base_url": "--cloud-api-base-url",
+    "models_dir": "--models-dir",
+}
+
+
+def die(message):
+    print(f"dtgen: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def resolve_named_path(value, base_dir, default_ext):
+    """Values starting with "/", "~", "./" or "../" are treated as plain paths;
+    anything else (subdirectories allowed) is resolved under base_dir,
+    appending the default extension when the last segment has none"""
+    path = Path(value).expanduser()
+    if path.is_absolute() or value.startswith(("./", "../")):
+        return path
+    if not path.suffix:
+        path = path.with_suffix(default_ext)
+    return base_dir / path
+
+
+def is_comment_line(line):
+    stripped = line.lstrip()
+    return (stripped in ("#", "//")
+            or stripped.startswith("# ")
+            or stripped.startswith("// "))
+
+
+def read_text_file(path, what):
+    if not path.is_file():
+        die(f"{what} not found: {path}")
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return "\n".join(l for l in lines if not is_comment_line(l)).strip()
+
+
+def load_parameters(value):
+    path = resolve_named_path(value, PARAMETERS_DIR, ".toml")
+    if not path.is_file():
+        die(f"parameter file not found: {path}")
+    try:
+        with path.open("rb") as f:
+            params = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        die(f"failed to parse parameter file ({path}): {e}")
+    for key in params:
+        if key not in KNOWN_TOP_KEYS:
+            print(f'dtgen: warning: unknown key "{key}" in parameter file, ignored',
+                  file=sys.stderr)
+    return params
+
+
+def resolve_prompt(args, params):
+    if args.prompt is not None:
+        text = args.prompt
+    elif args.prompt_file is not None:
+        path = resolve_named_path(args.prompt_file, PROMPTS_DIR, ".txt")
+        text = read_text_file(path, "prompt file")
+    elif "prompt" in params:
+        text = params["prompt"]
+    elif (PROMPTS_DIR / "default.txt").is_file():
+        text = read_text_file(PROMPTS_DIR / "default.txt", "prompt file")
+    else:
+        die("no prompt given: pass --prompt or --prompt-file, "
+            "set prompt in the parameter file, or create prompts/default.txt")
+    parts = [params.get("prompt_prefix"), text, params.get("prompt_suffix")]
+    return ", ".join(p for p in parts if p)
+
+
+def resolve_negative_prompt(args, params):
+    if args.negative_prompt is not None:
+        return args.negative_prompt
+    if args.negative_prompt_file is not None:
+        path = resolve_named_path(args.negative_prompt_file, PROMPTS_DIR, ".txt")
+        return read_text_file(path, "negative prompt file")
+    return params.get("negative_prompt")
+
+
+def resolve_output(args, params, seed):
+    ext = params.get("output_ext", "png").lstrip(".")
+    raw = args.output
+    if raw is None:
+        target_dir, filename = Path.cwd(), None
+    else:
+        path = Path(raw).expanduser()
+        if raw.endswith(os.sep) or path.is_dir():
+            target_dir, filename = path, None
+        else:
+            target_dir, filename = path.parent, path.name
+    if filename is None:
+        filename = f"{int(time.time())}-{seed}.{ext}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    return target_dir / filename
+
+
+def append_backend_args(cmd, backend):
+    if backend.get("cloud_compute"):
+        cmd.append("--cloud-compute")
+    if backend.get("remote"):
+        cmd.append("--remote")
+    if "remote_tls" in backend:
+        cmd.append("--remote-tls" if backend["remote_tls"] else "--no-remote-tls")
+    for key, flag in BACKEND_STRING_FLAGS.items():
+        if key in backend:
+            cmd += [flag, str(backend[key])]
+
+
+def append_option_args(cmd, options):
+    if "download_missing" in options:
+        cmd.append("--download-missing" if options["download_missing"]
+                   else "--no-download-missing")
+    if options.get("disable_preview"):
+        cmd.append("--disable-preview")
+    if options.get("offline"):
+        cmd.append("--offline")
+
+
+def main():
+    argv = sys.argv[1:]
+    passthrough = []
+    if "--" in argv:
+        split = argv.index("--")
+        argv, passthrough = argv[:split], argv[split + 1:]
+
+    parser = argparse.ArgumentParser(
+        prog="dtgen",
+        description="Wrapper for draw-things-cli generate: "
+                    "generation parameters live in TOML files, "
+                    "prompt and output path come from the command line. "
+                    "Arguments after \"--\" are passed through to "
+                    "draw-things-cli generate verbatim",
+    )
+    parser.add_argument("--parameter-file", "-P", metavar="<file>",
+                        help="parameter file: a name (subdirectories allowed) resolved "
+                             "under parameters/, appending .toml when the last segment "
+                             "has no extension; values starting with \"/\", \"~\", "
+                             "\"./\" or \"../\" are treated as plain paths; "
+                             "when omitted, the model's recommended settings are used")
+    parser.add_argument("--prompt", "-p", help="prompt text")
+    parser.add_argument("--prompt-file", "-f", metavar="<file>",
+                        help="prompt file: a name resolved under prompts/ "
+                             "(default extension .txt), same resolution rules as "
+                             "--parameter-file; when neither this nor --prompt is "
+                             "given, falls back to the parameter file's prompt, "
+                             "then prompts/default.txt")
+    parser.add_argument("--negative-prompt", "-n", help="negative prompt text")
+    parser.add_argument("--negative-prompt-file", "-N", metavar="<file>",
+                        help="negative prompt file, same resolution rules as "
+                             "--prompt-file")
+    parser.add_argument("--image", "-i", metavar="<path>",
+                        help="input image for img2img "
+                             "(absolute or relative to the current directory)")
+    parser.add_argument("--model", "-m",
+                        help="model (overrides the parameter file; required when "
+                             "no parameter file is used)")
+    parser.add_argument("--seed", "-s", type=int,
+                        help="random seed (overrides the parameter file; "
+                             "randomly generated when neither specifies one)")
+    parser.add_argument("--output", "-o", metavar="<path>",
+                        help="output path (absolute or relative to the current "
+                             "directory; when a directory is given or the option is "
+                             "omitted, the file is auto-named "
+                             "\"<unix timestamp>-<seed>\"; when omitted, output goes "
+                             "to the current directory)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the full command that would run, "
+                             "without executing it")
+    args = parser.parse_args(argv)
+
+    params = load_parameters(args.parameter_file) if args.parameter_file else {}
+
+    model = args.model or params.get("model")
+    if not model:
+        die("no model specified: set model in the parameter file or pass --model")
+
+    if args.prompt is not None and args.prompt_file is not None:
+        die("--prompt and --prompt-file are mutually exclusive")
+    prompt = resolve_prompt(args, params)
+    negative_prompt = resolve_negative_prompt(args, params)
+
+    if args.seed is not None:
+        seed = args.seed
+    elif "seed" in params:
+        seed = int(params["seed"])
+    else:
+        seed = random.SystemRandom().randrange(2 ** 32)
+
+    output = resolve_output(args, params, seed)
+
+    cmd = ["draw-things-cli", "generate", "--model", str(model), "--prompt", prompt]
+    if negative_prompt:
+        cmd += ["--negative-prompt", negative_prompt]
+    if args.image:
+        cmd += ["--image", str(Path(args.image).expanduser())]
+    for key, flag in SAMPLING_FLAGS.items():
+        if key in params:
+            cmd += [flag, str(params[key])]
+    cmd += ["--seed", str(seed)]
+    config = params.get("config", {})
+    if config:
+        cmd += ["--config-json", json.dumps(config, ensure_ascii=False)]
+    append_backend_args(cmd, params.get("backend", {}))
+    append_option_args(cmd, params.get("options", {}))
+    cmd += ["--output", str(output)]
+    cmd += passthrough
+
+    if args.dry_run:
+        print(shlex.join(cmd))
+        return
+    print(f"dtgen: writing output to {output}", file=sys.stderr)
+    sys.stderr.flush()
+    os.execvp(cmd[0], cmd)
+
+
+if __name__ == "__main__":
+    main()

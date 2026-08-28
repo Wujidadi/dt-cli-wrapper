@@ -1,0 +1,33 @@
+# Text-to-image preset: annotated version of default.toml,
+# spelling out the model's recommended settings (steps, CFG, sampler, ...) explicitly
+model = "z_image_turbo_1.0_q8p.ckpt"
+
+negative_prompt = "wrong anatomy, extra limbs, more than two hands, more than two feet, deformed limbs, overexposed, plain face, average face, typical AI face, generic face, identical facial features, cloned features, generic face shape"
+
+width = 1280
+height = 1280
+steps = 8
+cfg = 1.0
+strength = 1.0
+
+# Key names and value ranges follow JSGenerationConfiguration (camelCase, enums as numbers)
+[config]
+sampler = 17                         # UniPC Trailing
+seedMode = 2                         # Scale Alike
+shift = 3.0
+resolutionDependentShift = false
+sharpness = 0.0
+maskBlur = 1.5
+maskBlurOutset = 0
+preserveOriginalAfterInpaint = true
+colorCalibration = "none"
+hiresFix = false
+tiledDecoding = false
+tiledDiffusion = false
+batchSize = 1
+batchCount = 1
+upscaler = ""                        # empty string = disabled
+refinerModel = ""
+faceRestoration = ""
+loras = []
+controls = []

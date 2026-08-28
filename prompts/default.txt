@@ -1,0 +1,2 @@
+# Default prompt, used when neither --prompt nor --prompt-file is given
+A cozy wooden cabin on a snowy mountainside at dusk, warm light glowing from the windows, smoke rising from the chimney, pine trees dusted with snow, cinematic lighting, highly detailed
