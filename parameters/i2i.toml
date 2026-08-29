@@ -17,6 +17,8 @@ cfg = 1.0
 # 0.3-0.4 for light touch-ups, 0.5-0.6 for moderate changes, 0.7+ for heavy repaints
 strength = 0.5
 
+embed_metadata = true
+
 [config]
 sampler = 17                         # UniPC Trailing
 seedMode = 2                         # Scale Alike

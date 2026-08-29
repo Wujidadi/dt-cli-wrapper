@@ -27,6 +27,9 @@ model = "flux_2_klein_4b_q6p.ckpt"
 # frames = 49       # frame count for video models
 # seed = 1234567    # fixed seed; random on every run when omitted
 
+# Embed XMP generation metadata (Draw Things UI format) into PNG output
+# embed_metadata = true
+
 # Advanced overrides: this table is converted to JSON verbatim and passed via
 # --config-json (JSGenerationConfiguration format), covering things the
 # command-line flags do not — sampler, shift, hires fix, LoRA, and so on;

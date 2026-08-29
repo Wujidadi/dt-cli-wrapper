@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-28T22:47:36+08:00
+> Last updated: 2026-08-30T00:19:25+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -118,14 +118,40 @@ when neither provides one, the model's recommended value applies.
 - `--output` is always treated as a directory;
   when it does not exist, it is created recursively (like `mkdir -p`).
   The file is always auto-named `<unix seconds>-<seed>.<ext>`,
-  e.g. `1787847667-42.png`, so the seed is never lost —
-  `draw-things-cli` output carries no metadata (see Notes).
+  e.g. `1787847667-42.png`, so the seed survives in the file name
+  even without the embedded metadata (see Metadata Embedding).
   There is no custom file-name option;
   rename afterwards with your own script if needed.
 - The auto-naming extension comes from `output_ext` in the parameter file,
   defaulting to `png`; set it to `mp4` or `mov` for video models.
 - Before running, the actual output path is printed to stderr
   (`dtgen: writing output to ...`).
+
+## Metadata Embedding
+
+`draw-things-cli` writes bare pixels only,
+so `dtgen` embeds generation metadata into the output PNG itself
+after a successful run,
+replicating the structure the Draw Things UI writes:
+
+- an `eXIf` chunk carrying the pixel dimensions;
+- an `iTXt` XMP block containing:
+  - `dc:description` — the prompt,
+    the negative prompt on a `-`-prefixed line,
+    and a human-readable parameter summary line
+    (`Steps: ..., Sampler: ..., Seed: ..., Size: ..., Model: ...`);
+  - `xmp:CreatorTool` — `Draw Things`;
+  - `exif:UserComment` — a JSON object whose `v2` member is the
+    `JSGenerationConfiguration` dictionary,
+    the same format the UI embeds and can read back.
+
+Only parameters known to `dtgen` are written:
+the parameter file's values plus command-line overrides,
+with the actual size taken from the generated PNG header.
+Model recommended settings that `dtgen` never saw are not included,
+and arguments passed through after `--` are not reflected.
+Set `embed_metadata = false` in the parameter file to disable embedding;
+non-PNG outputs (`mp4`, `mov`) are always skipped.
 
 ## Parameter Files (TOML)
 
@@ -153,6 +179,7 @@ so a typo never fails silently.
 | `frames`          | integer | Frame count for video models                  |
 | `strength`        | number  | img2img denoising strength, 0 to 1            |
 | `seed`            | integer | Fixed seed                                    |
+| `embed_metadata`  | boolean | Embed XMP metadata into PNG, default true     |
 
 ### `[config]` — Advanced Overrides
 
@@ -200,10 +227,11 @@ Local generation by default when omitted.
 
 ## Notes
 
-- Images written by `draw-things-cli` carry no generation metadata:
-  its PNG writer emits bare pixels only,
-  so the `XMP UserComment` block found in UI-generated images never appears.
-  The auto-named output file is what preserves the seed.
+- Images written by `draw-things-cli` itself carry no generation metadata;
+  the XMP block found in `dtgen` output is embedded by `dtgen`
+  as a post-processing step (see Metadata Embedding).
+  The auto-named output file preserves the seed even when embedding
+  is disabled or fails.
 - `dtgen` always passes `--output`,
   so `draw-things-cli`'s native behavior of
   "terminal preview only, no file written, when `--output` is omitted"

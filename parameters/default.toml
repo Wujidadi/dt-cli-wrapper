@@ -8,6 +8,8 @@ steps = 8
 cfg = 1.0
 strength = 1.0
 
+embed_metadata = true
+
 [config]
 sampler = 17
 seedMode = 2

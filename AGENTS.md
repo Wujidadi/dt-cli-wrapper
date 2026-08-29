@@ -37,9 +37,11 @@ this file only records what matters for development and maintenance.
 - Models live in the directory set by `[backend] models_dir`
   (or Draw Things' default location); make sure it is available before testing.
 - PNGs produced by `draw-things-cli` carry no generation-parameter metadata;
-  only images produced by the Draw Things UI have an `XMP UserComment`
-  (its `v2` block is the JSGenerationConfiguration JSON,
-  usable as a reference sample).
+  images produced by the Draw Things UI have an `eXIf` chunk plus an
+  `iTXt` XMP block whose `exif:UserComment` `v2` member is the
+  JSGenerationConfiguration JSON (usable as a reference sample).
+  `dtgen` replicates that structure itself as a post-processing step
+  after generation (see Metadata Embedding in MANUAL.md).
 
 ## Verified draw-things-cli Facts (do not override from memory; see sources below)
 

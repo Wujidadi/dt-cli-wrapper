@@ -3,12 +3,14 @@
 
 import argparse
 import json
-import os
 import random
 import shlex
+import struct
+import subprocess
 import sys
 import time
 import tomllib
+import zlib
 from pathlib import Path
 
 # Resolve to the tool's real directory even when run through a symlink
@@ -19,7 +21,7 @@ PROMPTS_DIR = TOOL_DIR / "prompts"
 KNOWN_TOP_KEYS = {
     "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
     "output_ext", "steps", "cfg", "width", "height", "frames", "strength",
-    "seed", "backend", "options", "config",
+    "seed", "embed_metadata", "backend", "options", "config",
 }
 SAMPLING_FLAGS = {
     "steps": "--steps",
@@ -37,6 +39,41 @@ BACKEND_STRING_FLAGS = {
     "cloud_api_base_url": "--cloud-api-base-url",
     "models_dir": "--models-dir",
 }
+# Display names for the SamplerType / SeedMode enums, as written by the
+# Draw Things UI into its XMP metadata (matched for compatibility)
+SAMPLER_NAMES = {
+    0: "DPM++ 2M Karras", 1: "Euler A", 2: "DDIM", 3: "PLMS",
+    4: "DPM++ SDE Karras", 5: "UniPC", 6: "LCM", 7: "Euler A Substep",
+    8: "DPM++ SDE Substep", 9: "TCD", 10: "Euler A Trailing",
+    11: "DPM++ SDE Trailing", 12: "DPM++ 2M AYS", 13: "Euler A AYS",
+    14: "DPM++ SDE AYS", 15: "DPM++ 2M Trailing", 16: "DDIM Trailing",
+    17: "UniPC Trailing", 18: "UniPC AYS", 19: "TCD Trailing",
+}
+SEED_MODE_NAMES = {
+    0: "Legacy", 1: "Torch CPU Compatible", 2: "Scale Alike",
+    3: "NVIDIA GPU Compatible",
+}
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+XMP_TEMPLATE = """<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 6.0.0">
+   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+      <rdf:Description rdf:about=""
+            xmlns:dc="http://purl.org/dc/elements/1.1/"
+            xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+            xmlns:exif="http://ns.adobe.com/exif/1.0/">
+         <dc:description>
+            <rdf:Alt>
+               <rdf:li xml:lang="x-default">{description}</rdf:li>
+            </rdf:Alt>
+         </dc:description>
+         <xmp:CreatorTool>Draw Things</xmp:CreatorTool>
+         <exif:UserComment>
+            <rdf:Alt>
+               <rdf:li xml:lang="x-default">{user_comment}</rdf:li>
+            </rdf:Alt>
+         </exif:UserComment>
+      </rdf:Description>
+   </rdf:RDF>
+</x:xmpmeta>"""
 
 
 def die(message):
@@ -143,6 +180,127 @@ def append_option_args(cmd, options):
         cmd.append("--offline")
 
 
+def xml_escape(text):
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace("\n", "&#xA;"))
+
+
+def png_chunk(chunk_type, payload):
+    return (struct.pack(">I", len(payload)) + chunk_type + payload
+            + struct.pack(">I", zlib.crc32(chunk_type + payload)))
+
+
+def exif_payload(width, height):
+    """Minimal TIFF blob for a PNG eXIf chunk: an IFD0 whose single entry
+    points to an Exif IFD carrying PixelXDimension / PixelYDimension,
+    byte-identical in layout to what the Draw Things UI writes"""
+    return (b"MM\x00*\x00\x00\x00\x08"
+            + b"\x00\x01"
+            + b"\x87\x69\x00\x04\x00\x00\x00\x01\x00\x00\x00\x1a"
+            + b"\x00\x00\x00\x00"
+            + b"\x00\x02"
+            + b"\xa0\x02\x00\x04\x00\x00\x00\x01" + struct.pack(">I", width)
+            + b"\xa0\x03\x00\x04\x00\x00\x00\x01" + struct.pack(">I", height)
+            + b"\x00\x00\x00\x00")
+
+
+def build_xmp(prompt, negative_prompt, model, seed, width, height, params):
+    config = params.get("config", {})
+    steps = params.get("steps")
+    cfg = params.get("cfg")
+    strength = params.get("strength")
+    shift = config.get("shift")
+    sampler_name = SAMPLER_NAMES.get(config.get("sampler"))
+    seed_mode_name = SEED_MODE_NAMES.get(config.get("seedMode"))
+    loras = config.get("loras", [])
+
+    summary = []
+    if steps is not None:
+        summary.append(f"Steps: {steps}")
+    if sampler_name:
+        summary.append(f"Sampler: {sampler_name}")
+    if cfg is not None:
+        summary.append(f"Guidance Scale: {float(cfg)}")
+    summary.append(f"Seed: {seed}")
+    summary.append(f"Size: {width}x{height}")
+    summary.append(f"Model: {model}")
+    if strength is not None:
+        summary.append(f"Strength: {float(strength)}")
+    if seed_mode_name:
+        summary.append(f"Seed Mode: {seed_mode_name}")
+    if shift is not None:
+        summary.append(f"Shift: {float(shift)}")
+    for lora in loras:
+        summary.append(f"LoRA Model: {lora.get('file', '')}")
+        summary.append(f"LoRA Weight: {float(lora.get('weight', 1))}")
+    description = prompt
+    if negative_prompt:
+        description += f"\n-{negative_prompt}"
+    description += "\n" + ", ".join(summary)
+
+    v2 = dict(config)
+    v2.update({"model": model, "seed": seed, "width": width, "height": height})
+    if steps is not None:
+        v2["steps"] = steps
+    if cfg is not None:
+        v2["guidanceScale"] = cfg
+    if strength is not None:
+        v2["strength"] = strength
+    if "frames" in params:
+        v2["numFrames"] = params["frames"]
+
+    comment = {"c": prompt, "uc": negative_prompt or "", "model": model,
+               "seed": seed, "size": f"{width}x{height}", "v2": v2}
+    if steps is not None:
+        comment["steps"] = steps
+    if cfg is not None:
+        comment["scale"] = cfg
+    if strength is not None:
+        comment["strength"] = strength
+    if sampler_name:
+        comment["sampler"] = sampler_name
+    if seed_mode_name:
+        comment["seed_mode"] = seed_mode_name
+    if shift is not None:
+        comment["shift"] = shift
+    if "maskBlur" in config:
+        comment["mask_blur"] = config["maskBlur"]
+    if loras:
+        comment["lora"] = [{"model": l.get("file", ""),
+                            "weight": l.get("weight", 1)} for l in loras]
+    user_comment = json.dumps(comment, ensure_ascii=False, sort_keys=True,
+                              separators=(",", ":"))
+
+    return XMP_TEMPLATE.format(description=xml_escape(description),
+                               user_comment=xml_escape(user_comment))
+
+
+def embed_png_metadata(output, prompt, negative_prompt, model, seed, params):
+    data = output.read_bytes()
+    if not data.startswith(PNG_SIGNATURE) or data[12:16] != b"IHDR":
+        print("dtgen: warning: output is not a PNG, metadata not embedded",
+              file=sys.stderr)
+        return
+    width, height = struct.unpack(">II", data[16:24])
+    pos = 8
+    insert_at = None
+    while pos + 8 <= len(data):
+        length, = struct.unpack(">I", data[pos:pos + 4])
+        if data[pos + 4:pos + 8] == b"IDAT":
+            insert_at = pos
+            break
+        pos += 12 + length
+    if insert_at is None:
+        print("dtgen: warning: no IDAT chunk found, metadata not embedded",
+              file=sys.stderr)
+        return
+    xmp = build_xmp(prompt, negative_prompt, model, seed, width, height, params)
+    itxt = b"XML:com.adobe.xmp\x00\x00\x00\x00\x00" + xmp.encode("utf-8")
+    inserted = (png_chunk(b"eXIf", exif_payload(width, height))
+                + png_chunk(b"iTXt", itxt))
+    output.write_bytes(data[:insert_at] + inserted + data[insert_at:])
+
+
 def main():
     argv = sys.argv[1:]
     passthrough = []
@@ -236,7 +394,22 @@ def main():
         return
     print(f"dtgen: writing output to {output}", file=sys.stderr)
     sys.stderr.flush()
-    os.execvp(cmd[0], cmd)
+    try:
+        result = subprocess.run(cmd)
+    except FileNotFoundError:
+        die(f"command not found: {cmd[0]}")
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+    if not params.get("embed_metadata", True) or output.suffix.lower() != ".png":
+        return
+    if not output.is_file():
+        print(f"dtgen: warning: expected output not found, "
+              f"metadata not embedded: {output}", file=sys.stderr)
+        return
+    try:
+        embed_png_metadata(output, prompt, negative_prompt, model, seed, params)
+    except OSError as e:
+        print(f"dtgen: warning: failed to embed metadata: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
