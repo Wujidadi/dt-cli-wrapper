@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-30T00:19:25+08:00
+> Last updated: 2026-08-30T03:12:01+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -21,8 +21,10 @@ dt-cli-wrapper/
 ├── dtgen                  # The tool itself
 ├── parameters/            # Parameter files (TOML)
 │   └── example.toml       # Fully annotated example
-└── prompts/               # Prompt files
-    └── default.txt        # Optional; final fallback when no prompt is given
+├── prompts/               # Prompt files
+│   └── default.txt        # Optional; final fallback when no prompt is given
+└── enhancers/             # Prompt-enhancement presets (see Prompt Enhancement)
+    └── ernie.txt          # Default preset
 ```
 
 ## Basic Usage
@@ -44,6 +46,17 @@ dtgen -P example --prompt-file cube -o ~/Pictures/dt
 # parameters live in the parameter file (e.g. strength in parameters/i2i.toml)
 dtgen -P i2i -i input.png -p "studio portrait"
 
+# Enhance the prompt with a local ollama model before generating
+# (interactive: review the result, then generate, re-enhance, or quit)
+dtgen -P example -p "一隻橘貓在窗台上睡覺" --enhance
+
+# Enhance with a specific preset, or apply an ad-hoc instruction only
+dtgen -P example -p "a fox in snow" -e ghibli-watercolor
+dtgen -P example -p "a girl on a beach" -E "add a straw hat"
+
+# Print the enhanced prompt and exit without generating
+dtgen -p "a fox in snow" --enhance-only
+
 # Extra options after "--" are passed through to draw-things-cli
 dtgen -P example -p "test" -- --terminal-image
 
@@ -61,6 +74,10 @@ dtgen -P example -p "test" --dry-run
 | `--negative-prompt <t>`  | `-n`  | Negative prompt text                                           |
 | `--negative-prompt-file` | `-N`  | Negative prompt file                                           |
 | `--image <path>`         | `-i`  | Input image for img2img                                        |
+| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via local ollama; preset defaults to ernie  |
+| `--enhance-instruction`  | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
+| `--enhance-once`         |       | Enhance once and generate directly, no interactive loop        |
+| `--enhance-only`         |       | Print the enhanced prompt to stdout, skip generation           |
 | `--model <model>`        | `-m`  | Model; overrides the parameter file; required without one      |
 | `--seed <n>`             | `-s`  | Random seed; overrides the parameter file; random when omitted |
 | `--output <dir>`         | `-o`  | Output directory; created when missing; default: current dir   |
@@ -109,6 +126,82 @@ when neither provides one, the model's recommended value applies.
 - After filtering comments, leading and trailing whitespace is stripped
   to produce the final prompt; negative prompt files and
   `prompts/default.txt` follow the same rules.
+
+## Prompt Enhancement
+
+`--enhance` / `--enhance-instruction` rewrite the prompt with a local LLM
+served by [ollama](https://ollama.com) before generation,
+porting the "prompt-enhancer" script workflow from the Draw Things UI.
+Requirements: a running ollama service and a pulled model
+(defaults: `http://localhost:11434`, `qwen3.5:4b`;
+override via the `[enhancer]` section of the parameter file).
+The model's thinking mode is always disabled,
+and the enhanced prompt is always written in English,
+regardless of the input language.
+
+### Modes
+
+- `--enhance [<preset>]` — preset mode.
+  The optional value names a preset under `enhancers/`
+  (same resolution rules as `--prompt-file`, default extension `.txt`);
+  when omitted, `ernie` is used.
+  A preset file is the complete system instruction sent to the model;
+  edit or add files there to customize.
+- `--enhance-instruction <text>` — with `--enhance`,
+  the text is appended to the preset as an overriding requirement;
+  alone, it enables custom mode:
+  a rewrite that merges the instruction into the original prompt
+  (e.g. "add a straw hat") while keeping everything else intact.
+
+### Interactive Loop
+
+When stdin is a terminal (and `--enhance-only` is not given),
+each enhancement round prints the result and asks for the next action:
+
+- `g` — generate with the current enhanced prompt
+- `e` — feed the enhanced prompt back for another enhancement round
+- `i` — enter a new ad-hoc instruction, then re-enhance
+- `q` — quit without generating (exit status 0)
+
+When stdin is not a terminal, or `--enhance-once` is given,
+a single enhancement pass runs and generation proceeds directly.
+
+### Notes on Behavior
+
+- `--enhance-only` prints the final enhanced prompt to stdout and exits;
+  no model, parameter file, or output path is required.
+  It and `--enhance-once` both imply the default preset
+  when neither `--enhance` nor `--enhance-instruction` is given.
+- The prompt being enhanced may come from any source in the resolution order:
+  `--prompt`, `--prompt-file`, the parameter file's `prompt`,
+  or `prompts/default.txt`.
+- Enhancement applies to the bare prompt;
+  `prompt_prefix` / `prompt_suffix` are joined afterwards,
+  so LoRA trigger words are never rewritten by the enhancer.
+  The negative prompt is never touched.
+- Markdown code fences and wrapping quotes are stripped from the model output
+  (some presets, e.g. `ernie`, ask the model to answer in a code block).
+- `--dry-run` still performs the enhancement
+  (it is a real ollama call, but never triggers image generation),
+  so the printed command shows the actual final prompt.
+
+### Bundled Presets
+
+| Preset                | Type    | Description                                  |
+| --------------------- | ------- | -------------------------------------------- |
+| `ernie`               | General | Detailed objective image description         |
+| `z-image`             | General | Faithful, aesthetic visual description       |
+| `anima`               | Model   | Anima tag-format prompt rules                |
+| `ltx-video`           | Model   | LTX-2.3 audio-video cinematic prompt         |
+| `leica-portrait`      | Style   | Cinematic photorealistic portrait            |
+| `ghibli-watercolor`   | Style   | Studio Ghibli watercolor painting            |
+| `cyberpunk-mecha`     | Style   | Futuristic cyberpunk concept art             |
+| `monet-impressionist` | Style   | Monet-like Impressionist oil painting        |
+| `vaporwave-surreal`   | Style   | Vaporwave retro-futurism aesthetic           |
+| `space-epic`          | Style   | Sci-fi space art with epic scale             |
+| `chinoiserie-ink`     | Style   | Modern Chinese splash-ink style              |
+| `vinyl-toy`           | Style   | Cute 3D Pop Mart vinyl toy style             |
+| `wabi-sabi-minimal`   | Style   | Wabi-sabi architectural minimalism           |
 
 ## Seed and Output File Name
 
@@ -200,6 +293,15 @@ file = "my_lora_f16.ckpt"
 weight = 0.8
 version = "flux1"
 ```
+
+### `[enhancer]` — Prompt Enhancement Backend
+
+Defaults apply when omitted (see Prompt Enhancement).
+
+| Key     | Type   | Description                                        |
+| ------- | ------ | -------------------------------------------------- |
+| `url`   | string | ollama endpoint, default `http://localhost:11434`  |
+| `model` | string | ollama model name, default `qwen3.5:4b`            |
 
 ### `[backend]` — Execution Backend
 

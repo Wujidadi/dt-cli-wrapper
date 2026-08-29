@@ -23,6 +23,14 @@ this file only records what matters for development and maintenance.
   (e.g. `prompts/negative/`).
   `default.txt` is the fallback when neither `--prompt` nor `--prompt-file`
   is given.
+- `enhancers/`: prompt-enhancement presets, one file per preset,
+  each being the complete system instruction sent to the LLM.
+  Enhancement (`--enhance` / `--enhance-instruction`) runs against a local
+  ollama service (`POST /api/chat`, default `qwen3.5:4b`) with thinking mode
+  always disabled — 4B-scale thinking was measured slower and no better,
+  sometimes worse, for this task.
+  The output language is fixed to English via the `LANGUAGE_DIRECTIVES`
+  seam in `dtgen`; a selectable-language option is planned there.
 - `MANUAL.md`: the user manual.
   **It must be updated in sync whenever tool behavior changes**;
   the timestamp at the top must be obtained by actually running a command,
@@ -31,7 +39,10 @@ this file only records what matters for development and maintenance.
 ## Development and Testing
 
 - Always verify argument assembly with `dtgen ... --dry-run`,
-  which never triggers generation.
+  which never triggers generation
+  (with `--enhance` it still calls ollama for the enhancement itself).
+- `dtgen -p "..." --enhance-only` exercises the enhancement path alone:
+  no model, parameter file, or output involved.
 - For end-to-end tests, use reduced parameters (e.g. 448x448, steps 2)
   instead of running full-size defaults.
 - Models live in the directory set by `[backend] models_dir`

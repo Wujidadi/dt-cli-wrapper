@@ -4,12 +4,14 @@
 import argparse
 import json
 import random
+import re
 import shlex
 import struct
 import subprocess
 import sys
 import time
 import tomllib
+import urllib.request
 import zlib
 from pathlib import Path
 
@@ -17,12 +19,33 @@ from pathlib import Path
 TOOL_DIR = Path(__file__).resolve().parent
 PARAMETERS_DIR = TOOL_DIR / "parameters"
 PROMPTS_DIR = TOOL_DIR / "prompts"
+ENHANCERS_DIR = TOOL_DIR / "enhancers"
 
 KNOWN_TOP_KEYS = {
     "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
     "output_ext", "steps", "cfg", "width", "height", "frames", "strength",
-    "seed", "embed_metadata", "backend", "options", "config",
+    "seed", "embed_metadata", "backend", "options", "config", "enhancer",
 }
+DEFAULT_ENHANCER = {"url": "http://localhost:11434", "model": "qwen3.5:4b"}
+DEFAULT_ENHANCE_PRESET = "ernie"
+# Single seam for the planned output-language option: adding a language means
+# adding a directive here and a way to select it
+ENHANCE_LANGUAGE = "en"
+LANGUAGE_DIRECTIVES = {
+    "en": "Regardless of the input language, write the final prompt in English.",
+}
+CUSTOM_ENHANCE_RULE = """You are a professional prompt editor for image and video generation models.
+
+Your task:
+1. Produce exactly one final prompt from the original prompt and the custom instruction.
+2. When the instruction asks for a local change (e.g. "add a hat to the character"), merge that change into the original prompt and keep everything else intact; never produce multiple versions.
+3. The output must be a complete prompt that can directly replace the original.
+
+Do not output the original prompt, headings such as "Enhanced Prompt", explanations, comparisons, lists, Markdown, code blocks, or quotes wrapping the result."""
+ENHANCE_MARKERS = (
+    "Enhanced Prompt", "Modified Prompt", "Final Prompt",
+    "Rewritten Prompt", "Optimized Prompt", "Updated Prompt",
+)
 SAMPLING_FLAGS = {
     "steps": "--steps",
     "cfg": "--cfg",
@@ -123,21 +146,127 @@ def load_parameters(value):
     return params
 
 
-def resolve_prompt(args, params):
+def resolve_prompt_text(args, params):
     if args.prompt is not None:
-        text = args.prompt
-    elif args.prompt_file is not None:
+        return args.prompt
+    if args.prompt_file is not None:
         path = resolve_named_path(args.prompt_file, PROMPTS_DIR, ".txt")
-        text = read_text_file(path, "prompt file")
-    elif "prompt" in params:
-        text = params["prompt"]
-    elif (PROMPTS_DIR / "default.txt").is_file():
-        text = read_text_file(PROMPTS_DIR / "default.txt", "prompt file")
-    else:
-        die("no prompt given: pass --prompt or --prompt-file, "
-            "set prompt in the parameter file, or create prompts/default.txt")
+        return read_text_file(path, "prompt file")
+    if "prompt" in params:
+        return params["prompt"]
+    if (PROMPTS_DIR / "default.txt").is_file():
+        return read_text_file(PROMPTS_DIR / "default.txt", "prompt file")
+    die("no prompt given: pass --prompt or --prompt-file, "
+        "set prompt in the parameter file, or create prompts/default.txt")
+
+
+def apply_prompt_affixes(text, params):
     parts = [params.get("prompt_prefix"), text, params.get("prompt_suffix")]
     return ", ".join(p for p in parts if p)
+
+
+def load_enhancer_rule(name):
+    path = resolve_named_path(name, ENHANCERS_DIR, ".txt")
+    if not path.is_file():
+        die(f"enhancer preset not found: {path}")
+    return path.read_text(encoding="utf-8").strip()
+
+
+def call_ollama(cfg, system, prompt):
+    payload = json.dumps({
+        "model": cfg["model"],
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": prompt}],
+        "stream": False,
+        "think": False,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        cfg["url"].rstrip("/") + "/api/chat", data=payload,
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            reply = json.load(response)
+    except (OSError, ValueError) as e:
+        print(f"dtgen: ollama request failed: {e}", file=sys.stderr)
+        return None
+    return (reply.get("message") or {}).get("content", "")
+
+
+def clean_enhanced(text, strip_markers):
+    text = text.strip()
+    fenced = re.search(r"```[^\n]*\n(.*?)```", text, re.DOTALL)
+    if fenced:
+        text = fenced.group(1).strip()
+    if strip_markers:
+        best, best_len = -1, 0
+        for marker in ENHANCE_MARKERS:
+            index = text.rfind(marker)
+            if index > best:
+                best, best_len = index, len(marker)
+        if best != -1:
+            text = text[best + best_len:].strip()
+            text = re.sub(r"^[^\n]*[:：]\s*", "", text).strip()
+            text = re.sub(r"^[\s*#-]+", "", text).strip()
+    while len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
+    return text
+
+
+def enhance_prompt(text, args, params):
+    cfg = {**DEFAULT_ENHANCER, **params.get("enhancer", {})}
+    custom_mode = args.enhance is None
+    rule = CUSTOM_ENHANCE_RULE if custom_mode else load_enhancer_rule(args.enhance)
+    instruction = args.enhance_instruction
+    interactive = (not args.enhance_only and not args.enhance_once
+                   and sys.stdin.isatty())
+    current = text
+    while True:
+        system = rule
+        if instruction:
+            system += ("\n\nCustom instruction (takes precedence over the rules "
+                       f"above): {instruction}")
+        system += "\n\n" + LANGUAGE_DIRECTIVES[ENHANCE_LANGUAGE]
+        source = ("custom instruction" if custom_mode
+                  else f"preset {args.enhance}")
+        print(f"dtgen: enhancing prompt (model {cfg['model']}, {source})...",
+              file=sys.stderr)
+        result = call_ollama(cfg, system, current)
+        if result is not None:
+            result = clean_enhanced(result, custom_mode)
+        if result:
+            current = result
+        elif not interactive:
+            die("prompt enhancement failed")
+        else:
+            print("dtgen: enhancement failed, prompt unchanged", file=sys.stderr)
+        print("----- enhanced prompt -----", file=sys.stderr)
+        print(current, file=sys.stderr)
+        print("---------------------------", file=sys.stderr)
+        if not interactive:
+            return current
+        while True:
+            try:
+                choice = input("dtgen: [g]enerate  [e]nhance again  "
+                               "[i]nstruction  [q]uit > ").strip().lower()
+            except EOFError:
+                sys.exit(0)
+            if choice == "g":
+                return current
+            if choice == "e":
+                break
+            if choice == "i":
+                try:
+                    entered = input("dtgen: instruction > ").strip()
+                except EOFError:
+                    sys.exit(0)
+                if entered:
+                    instruction = entered
+                else:
+                    print("dtgen: empty instruction, keeping the previous one",
+                          file=sys.stderr)
+                break
+            if choice == "q":
+                sys.exit(0)
 
 
 def resolve_negative_prompt(args, params):
@@ -333,6 +462,23 @@ def main():
     parser.add_argument("--negative-prompt-file", "-N", metavar="<file>",
                         help="negative prompt file, same resolution rules as "
                              "--prompt-file")
+    parser.add_argument("--enhance", "-e", nargs="?", const=DEFAULT_ENHANCE_PRESET,
+                        metavar="<preset>",
+                        help="enhance the prompt with a local ollama model before "
+                             "generation; the optional value names an enhancer "
+                             "preset resolved under enhancers/ (default: "
+                             f"{DEFAULT_ENHANCE_PRESET}), same resolution rules "
+                             "as --prompt-file")
+    parser.add_argument("--enhance-instruction", "-E", metavar="<text>",
+                        help="ad-hoc enhancement instruction; combined with "
+                             "--enhance it is appended to the preset, alone it "
+                             "implies enhancement in custom-instruction mode")
+    parser.add_argument("--enhance-once", action="store_true",
+                        help="skip the interactive loop: enhance once and "
+                             "proceed straight to generation")
+    parser.add_argument("--enhance-only", action="store_true",
+                        help="print the enhanced prompt to stdout and exit "
+                             "without generating")
     parser.add_argument("--image", "-i", metavar="<path>",
                         help="input image for img2img "
                              "(absolute or relative to the current directory)")
@@ -354,13 +500,24 @@ def main():
 
     params = load_parameters(args.parameter_file) if args.parameter_file else {}
 
+    if args.prompt is not None and args.prompt_file is not None:
+        die("--prompt and --prompt-file are mutually exclusive")
+    prompt_text = resolve_prompt_text(args, params)
+
+    if (args.enhance_only or args.enhance_once) and args.enhance is None \
+            and args.enhance_instruction is None:
+        args.enhance = DEFAULT_ENHANCE_PRESET
+    if args.enhance is not None or args.enhance_instruction is not None:
+        prompt_text = enhance_prompt(prompt_text, args, params)
+        if args.enhance_only:
+            print(prompt_text)
+            return
+    prompt = apply_prompt_affixes(prompt_text, params)
+
     model = args.model or params.get("model")
     if not model:
         die("no model specified: set model in the parameter file or pass --model")
 
-    if args.prompt is not None and args.prompt_file is not None:
-        die("--prompt and --prompt-file are mutually exclusive")
-    prompt = resolve_prompt(args, params)
     negative_prompt = resolve_negative_prompt(args, params)
 
     if args.seed is not None:

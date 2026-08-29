@@ -18,6 +18,9 @@ switching models or scenarios becomes a matter of switching a file name.
 - Outputs are auto-named `<unix timestamp>-<seed>.<ext>`;
   when no seed is given, one is generated randomly and passed explicitly,
   so every result is reproducible.
+- Optional prompt enhancement via a local ollama model (`--enhance`):
+  preset-driven or ad-hoc-instruction rewriting with an interactive
+  review loop, ported from the Draw Things UI "prompt enhancer" script.
 - `--dry-run` previews the full command;
   arguments after `--` are passed through to `draw-things-cli` verbatim.
 
@@ -28,6 +31,9 @@ switching models or scenarios becomes a matter of switching a file name.
 - Python 3.11+ (standard library only)
 - Draw Things model files
   (the path can be set via `[backend] models_dir` in a parameter file)
+- For prompt enhancement only: a running [ollama](https://ollama.com)
+  service with a pulled model (default `qwen3.5:4b`, about 3.4 GB);
+  everything else works without it
 
 ## Installation
 
@@ -56,6 +62,9 @@ dtgen -P i2i -i input.png
 # No parameter file: the model's recommended settings apply,
 # and the model must be given via --model
 dtgen -m flux_2_klein_4b_q6p.ckpt -p "a red cube on a table"
+
+# Enhance the prompt with a local ollama model, review, then generate
+dtgen -P default -p "一隻橘貓在窗台上睡覺" --enhance
 ```
 
 ## Directory Layout
@@ -65,6 +74,7 @@ dt-cli-wrapper/
 ├── dtgen                  # The tool itself (single-file Python 3 script)
 ├── parameters/            # TOML parameter files (example.toml is an annotated template)
 ├── prompts/               # Prompt files (default.txt is the fallback prompt)
+├── enhancers/             # Prompt-enhancement presets (ernie.txt is the default)
 ├── MANUAL.md              # Full user manual
 └── AGENTS.md              # Development notes (imported by CLAUDE.md)
 ```
