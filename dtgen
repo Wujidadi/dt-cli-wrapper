@@ -33,8 +33,9 @@ DEFAULT_ENHANCE_PRESET = "z-image"
 # trained mostly on Simplified corpora, so it prompts better
 LANGUAGE_DIRECTIVES = {
     "en": "Regardless of the input language, write the final prompt in English.",
-    "zh": "Regardless of the input language, write the final prompt in "
-          "Simplified Chinese (简体中文).",
+    "zh": "Regardless of the input language, the final prompt MUST be written "
+          "entirely in Simplified Chinese (简体中文); convert any Traditional "
+          "Chinese characters to their Simplified forms.",
 }
 FIXED_LANGUAGE_PRAGMA = "# dtgen:fixed-language"
 CUSTOM_ENHANCE_RULE = """You are a professional prompt editor for image and video generation models.
@@ -235,12 +236,14 @@ def enhance_prompt(text, args, params):
                    and sys.stdin.isatty())
     current = text
     while True:
-        system = rule
+        # The language directive must lead the system instruction: appended
+        # after a long rule it loses to the model's input-script copying
+        # (measured with qwen3.5:4b on Traditional Chinese input)
+        system = "" if fixed_language else LANGUAGE_DIRECTIVES[language] + "\n\n"
+        system += rule
         if instruction:
             system += ("\n\nCustom instruction (takes precedence over the rules "
                        f"above): {instruction}")
-        if not fixed_language:
-            system += "\n\n" + LANGUAGE_DIRECTIVES[language]
         source = ("custom instruction" if custom_mode
                   else f"preset {args.enhance}")
         print(f"dtgen: enhancing prompt (model {cfg['model']}, {source})...",

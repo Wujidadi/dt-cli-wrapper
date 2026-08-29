@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-30T03:38:00+08:00
+> Last updated: 2026-08-30T04:03:20+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -167,7 +167,7 @@ the parameter file's `[enhancer]` `language` > `en`.
   Model-format presets whose target requires a specific language
   can declare `# dtgen:fixed-language` as the first line of the preset file:
   the line is stripped from the system instruction
-  and no language directive is appended,
+  and no language directive is added,
   so the preset's own language rules stand as written.
   `anima` and `ltx-video` ship with this pragma (their targets require
   English) and therefore ignore the language selection entirely.

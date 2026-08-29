@@ -30,8 +30,9 @@ this file only records what matters for development and maintenance.
   always disabled — 4B-scale thinking was measured slower and no better,
   sometimes worse, for this task.
   The output language (English default, `zh` = deliberately Simplified
-  Chinese for better model affinity) is appended as a directive from
-  `LANGUAGE_DIRECTIVES` in `dtgen`,
+  Chinese for better model affinity) is enforced by a directive from
+  `LANGUAGE_DIRECTIVES` in `dtgen` placed ahead of the preset rule
+  (trailing it loses to input-script copying on small models),
   unless the preset's first line is the `# dtgen:fixed-language` pragma
   (used by `anima` and `ltx-video`, whose targets require English).
 - `MANUAL.md`: the user manual.
