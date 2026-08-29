@@ -29,8 +29,11 @@ this file only records what matters for development and maintenance.
   ollama service (`POST /api/chat`, default `qwen3.5:4b`) with thinking mode
   always disabled — 4B-scale thinking was measured slower and no better,
   sometimes worse, for this task.
-  The output language is fixed to English via the `LANGUAGE_DIRECTIVES`
-  seam in `dtgen`; a selectable-language option is planned there.
+  The output language (English default, `zh` = deliberately Simplified
+  Chinese for better model affinity) is appended as a directive from
+  `LANGUAGE_DIRECTIVES` in `dtgen`,
+  unless the preset's first line is the `# dtgen:fixed-language` pragma
+  (used by `anima` and `ltx-video`, whose targets require English).
 - `MANUAL.md`: the user manual.
   **It must be updated in sync whenever tool behavior changes**;
   the timestamp at the top must be obtained by actually running a command,

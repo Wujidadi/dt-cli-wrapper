@@ -20,7 +20,8 @@ switching models or scenarios becomes a matter of switching a file name.
   so every result is reproducible.
 - Optional prompt enhancement via a local ollama model (`--enhance`):
   preset-driven or ad-hoc-instruction rewriting with an interactive
-  review loop, ported from the Draw Things UI "prompt enhancer" script.
+  review loop, ported from the Draw Things UI "prompt enhancer" script;
+  output language selectable between English and Simplified Chinese.
 - `--dry-run` previews the full command;
   arguments after `--` are passed through to `draw-things-cli` verbatim.
 
@@ -74,7 +75,7 @@ dt-cli-wrapper/
 ├── dtgen                  # The tool itself (single-file Python 3 script)
 ├── parameters/            # TOML parameter files (example.toml is an annotated template)
 ├── prompts/               # Prompt files (default.txt is the fallback prompt)
-├── enhancers/             # Prompt-enhancement presets (ernie.txt is the default)
+├── enhancers/             # Prompt-enhancement presets (z-image.txt is the default)
 ├── MANUAL.md              # Full user manual
 └── AGENTS.md              # Development notes (imported by CLAUDE.md)
 ```

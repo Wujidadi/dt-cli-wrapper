@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-30T03:12:01+08:00
+> Last updated: 2026-08-30T03:38:00+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -24,7 +24,7 @@ dt-cli-wrapper/
 ├── prompts/               # Prompt files
 │   └── default.txt        # Optional; final fallback when no prompt is given
 └── enhancers/             # Prompt-enhancement presets (see Prompt Enhancement)
-    └── ernie.txt          # Default preset
+    └── z-image.txt        # Default preset
 ```
 
 ## Basic Usage
@@ -74,8 +74,9 @@ dtgen -P example -p "test" --dry-run
 | `--negative-prompt <t>`  | `-n`  | Negative prompt text                                           |
 | `--negative-prompt-file` | `-N`  | Negative prompt file                                           |
 | `--image <path>`         | `-i`  | Input image for img2img                                        |
-| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via local ollama; preset defaults to ernie  |
+| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via local ollama; default preset z-image    |
 | `--enhance-instruction`  | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
+| `--enhance-language <l>` | `-L`  | Output language of the enhanced prompt: en (default) or zh     |
 | `--enhance-once`         |       | Enhance once and generate directly, no interactive loop        |
 | `--enhance-only`         |       | Print the enhanced prompt to stdout, skip generation           |
 | `--model <model>`        | `-m`  | Model; overrides the parameter file; required without one      |
@@ -135,16 +136,14 @@ porting the "prompt-enhancer" script workflow from the Draw Things UI.
 Requirements: a running ollama service and a pulled model
 (defaults: `http://localhost:11434`, `qwen3.5:4b`;
 override via the `[enhancer]` section of the parameter file).
-The model's thinking mode is always disabled,
-and the enhanced prompt is always written in English,
-regardless of the input language.
+The model's thinking mode is always disabled.
 
 ### Modes
 
 - `--enhance [<preset>]` — preset mode.
   The optional value names a preset under `enhancers/`
   (same resolution rules as `--prompt-file`, default extension `.txt`);
-  when omitted, `ernie` is used.
+  when omitted, `z-image` is used.
   A preset file is the complete system instruction sent to the model;
   edit or add files there to customize.
 - `--enhance-instruction <text>` — with `--enhance`,
@@ -152,6 +151,26 @@ regardless of the input language.
   alone, it enables custom mode:
   a rewrite that merges the instruction into the original prompt
   (e.g. "add a straw hat") while keeping everything else intact.
+
+### Output Language
+
+Regardless of the input language,
+the enhanced prompt is written in the selected output language:
+`en` (English, the default) or `zh` (Chinese).
+Selection precedence: `--enhance-language` >
+the parameter file's `[enhancer]` `language` > `en`.
+
+- `zh` deliberately means Simplified Chinese:
+  Chinese-capable image models (Qwen Image, Z-Image, ...) are trained
+  mostly on Simplified corpora, so it prompts better than Traditional.
+- The option only makes sense for general and style presets.
+  Model-format presets whose target requires a specific language
+  can declare `# dtgen:fixed-language` as the first line of the preset file:
+  the line is stripped from the system instruction
+  and no language directive is appended,
+  so the preset's own language rules stand as written.
+  `anima` and `ltx-video` ship with this pragma (their targets require
+  English) and therefore ignore the language selection entirely.
 
 ### Interactive Loop
 
@@ -298,10 +317,11 @@ version = "flux1"
 
 Defaults apply when omitted (see Prompt Enhancement).
 
-| Key     | Type   | Description                                        |
-| ------- | ------ | -------------------------------------------------- |
-| `url`   | string | ollama endpoint, default `http://localhost:11434`  |
-| `model` | string | ollama model name, default `qwen3.5:4b`            |
+| Key        | Type   | Description                                            |
+| ---------- | ------ | ------------------------------------------------------ |
+| `url`      | string | ollama endpoint, default `http://localhost:11434`      |
+| `model`    | string | ollama model name, default `qwen3.5:4b`                |
+| `language` | string | Output language, en or zh; `--enhance-language` wins   |
 
 ### `[backend]` — Execution Backend
 

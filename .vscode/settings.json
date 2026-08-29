@@ -1,7 +1,8 @@
 {
     // This file association must be set at both the Folder and Workspace levels
     "files.associations": {
-        "**/prompts/**/*.txt": "ignore"
+        "**/prompts/**/*.txt": "ignore",
+        "**/enhancers/**/*.txt": "markdown"
     },
     "python-envs.pythonProjects": [
         {
