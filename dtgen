@@ -257,9 +257,10 @@ def enhance_prompt(text, args, params):
             die("prompt enhancement failed")
         else:
             print("dtgen: enhancement failed, prompt unchanged", file=sys.stderr)
-        print("----- enhanced prompt -----", file=sys.stderr)
-        print(current, file=sys.stderr)
-        print("---------------------------", file=sys.stderr)
+        if not args.enhance_only:
+            print("----- enhanced prompt -----", file=sys.stderr)
+            print(current, file=sys.stderr)
+            print("---------------------------", file=sys.stderr)
         if not interactive:
             return current
         while True:
