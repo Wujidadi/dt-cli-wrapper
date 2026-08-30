@@ -20,6 +20,7 @@ TOOL_DIR = Path(__file__).resolve().parent
 PARAMETERS_DIR = TOOL_DIR / "parameters"
 PROMPTS_DIR = TOOL_DIR / "prompts"
 ENHANCERS_DIR = TOOL_DIR / "enhancers"
+T2S_MAP_PATH = TOOL_DIR / "data" / "t2s.txt"
 
 KNOWN_TOP_KEYS = {
     "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
@@ -180,6 +181,23 @@ def load_enhancer_rule(name):
     return text, False
 
 
+_t2s_table = None
+
+
+def to_simplified(text):
+    """Deterministic char-level Traditional-to-Simplified conversion:
+    the LLM ignores the zh directive when the input is long Traditional
+    Chinese, and model-side conversion can silently rewrite wording"""
+    global _t2s_table
+    if _t2s_table is None:
+        if not T2S_MAP_PATH.is_file():
+            die(f"t2s character map not found: {T2S_MAP_PATH}")
+        lines = [l for l in T2S_MAP_PATH.read_text(encoding="utf-8").splitlines()
+                 if l and not l.startswith("#")]
+        _t2s_table = str.maketrans(lines[0], lines[1])
+    return text.translate(_t2s_table)
+
+
 def call_ollama(cfg, system, prompt):
     payload = json.dumps({
         "model": cfg["model"],
@@ -252,6 +270,8 @@ def enhance_prompt(text, args, params):
         if result is not None:
             result = clean_enhanced(result, custom_mode)
         if result:
+            if language == "zh" and not fixed_language:
+                result = to_simplified(result)
             current = result
         elif not interactive:
             die("prompt enhancement failed")

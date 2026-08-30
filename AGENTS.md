@@ -35,6 +35,9 @@ this file only records what matters for development and maintenance.
   (trailing it loses to input-script copying on small models),
   unless the preset's first line is the `# dtgen:fixed-language` pragma
   (used by `anima` and `ltx-video`, whose targets require English).
+  `zh` output is additionally guaranteed by a deterministic char-level
+  Traditional-to-Simplified pass (`data/t2s.txt`, distilled from OpenCC),
+  because small models ignore the directive on long Traditional input.
 - `MANUAL.md`: the user manual.
   **It must be updated in sync whenever tool behavior changes**;
   the timestamp at the top must be obtained by actually running a command,

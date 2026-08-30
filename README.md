@@ -76,6 +76,7 @@ dt-cli-wrapper/
 ├── parameters/            # TOML parameter files (example.toml is an annotated template)
 ├── prompts/               # Prompt files (default.txt is the fallback prompt)
 ├── enhancers/             # Prompt-enhancement presets (z-image.txt is the default)
+├── data/                  # Internal data files
 ├── MANUAL.md              # Full user manual
 └── AGENTS.md              # Development notes (imported by CLAUDE.md)
 ```

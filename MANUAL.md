@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-30T04:03:20+08:00
+> Last updated: 2026-08-30T14:34:05+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:
 generation parameters are centralized in TOML files,
@@ -23,8 +23,9 @@ dt-cli-wrapper/
 │   └── example.toml       # Fully annotated example
 ├── prompts/               # Prompt files
 │   └── default.txt        # Optional; final fallback when no prompt is given
-└── enhancers/             # Prompt-enhancement presets (see Prompt Enhancement)
-    └── z-image.txt        # Default preset
+├── enhancers/             # Prompt-enhancement presets (see Prompt Enhancement)
+│   └── z-image.txt        # Default preset
+└── data/                  # Internal data (t2s.txt: Traditional-to-Simplified map)
 ```
 
 ## Basic Usage
@@ -163,6 +164,11 @@ the parameter file's `[enhancer]` `language` > `en`.
 - `zh` deliberately means Simplified Chinese:
   Chinese-capable image models (Qwen Image, Z-Image, ...) are trained
   mostly on Simplified corpora, so it prompts better than Traditional.
+  Simplified output is guaranteed deterministically:
+  after the model call, any remaining Traditional characters are converted
+  char-by-char via the map in `data/t2s.txt`
+  (small models ignore the language directive on long Traditional input,
+  and model-side conversion can silently rewrite wording).
 - The option only makes sense for general and style presets.
   Model-format presets whose target requires a specific language
   can declare `# dtgen:fixed-language` as the first line of the preset file:
