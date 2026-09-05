@@ -1,20 +1,14 @@
 # Installed Draw Things Models
 
-> Last updated: 2026-09-05T20:11:19+08:00
+> Last updated: 2026-09-05T21:54:01+08:00
 
-Inventory of the Draw Things official / community models installed in the
-models directory that the presets point to via `[backend] models_dir`
-(when the key is absent, `draw-things-cli` falls back to Draw Things' default location),
-together with the text encoders, VAEs and other files each of them depends on.
+Inventory of the Draw Things official / community models installed in the models directory that the presets point to via `[backend] models_dir` (when the key is absent, `draw-things-cli` falls back to Draw Things' default location), together with the text encoders, VAEs and other files each of them depends on.\
 Checkpoints and LoRAs imported from outside the Draw Things catalog are deliberately excluded.
 
 Sources:
 
 - `draw-things-cli models list --downloaded-only` for the model list and its official / community classification.
-- Draw Things model catalog (`models.json`, `loras.json` cached under
-  `~/Library/Containers/com.liuliu.draw-things/Data/Library/Caches/net/`)
-  and the built-in `ModelZoo.swift` / `TextGenerationZoo.swift` / `LLMZoo.swift`
-  of `drawthingsai/draw-things-community` for the dependency mapping.
+- Draw Things model catalog (`models.json`, `loras.json` cached under `~/Library/Containers/com.liuliu.draw-things/Data/Library/Caches/net/`) and the built-in `ModelZoo.swift` / `TextGenerationZoo.swift` / `LLMZoo.swift` of `drawthingsai/draw-things-community` for the dependency mapping.
 
 ## Models
 
@@ -30,10 +24,10 @@ Sources:
 
 Notes:
 
-- `krea_2_turbo_q8p.ckpt` is listed as `community` by `draw-things-cli models list --downloaded-only`
-  because the catalog entry is served from `models.json` rather than being built into the CLI binary;
+- `krea_2_turbo_q8p.ckpt` is listed as `community` by `draw-things-cli models list --downloaded-only` because the catalog entry is served from `models.json` rather than being built into the CLI binary;\
   the same catalog marks it as an official Draw Things conversion (`© 2026 Krea.ai, Inc.`).
-- None of the installed models declares a refiner; `refinerModel` stays `""` in every preset.
+- None of the installed models declares a refiner;\
+  `refinerModel` stays `""` in every preset.
 
 ## Dependencies
 

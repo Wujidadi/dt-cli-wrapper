@@ -1,31 +1,25 @@
 # dtgen User Manual
 
-> Last updated: 2026-08-30T14:34:05+08:00
+> Last updated: 2026-09-05T21:54:01+08:00
 
-`dtgen` is a wrapper for `draw-things-cli generate`:
-generation parameters are centralized in TOML files,
-the prompt and output path come from the command line,
-and everything else (model resolution, recommended settings, the actual generation)
-is left to `draw-things-cli`.
+`dtgen` is a wrapper for `draw-things-cli generate`:\
+generation parameters are centralized in TOML files, the prompt and output path come from the command line, and everything else (model resolution, recommended settings, the actual generation) is left to `draw-things-cli`.
 
 ## Installation and Directory Layout
 
-- The tool itself is `dtgen` in this directory
-  (single-file Python 3 script, zero external dependencies, requires Python 3.11+).
-- Symlink it into any directory on your `PATH` to run it from anywhere;
-  the script resolves the symlink by itself,
-  so `parameters/` and `prompts/` always resolve to the tool's real directory.
+- The tool itself is `dtgen` in this directory (single-file Python 3 script, requires Python 3.11+).\
+  Its only dependency is the [text-to-image-prompt-enhancer](https://github.com/Wujidadi/text-to-image-prompt-enhancer) package, declared as PEP 723 inline script metadata at the top of the file and pinned to a release tag;\
+  the shebang runs the script through `uv run --script`, so [uv](https://docs.astral.sh/uv/) must be installed, and the first run resolves the dependency into uv's cache (network access needed once).
+- Symlink it into any directory on your `PATH` to run it from anywhere;\
+  the script resolves the symlink by itself, so `parameters/` and `prompts/` always resolve to the tool's real directory.
 
 ```
 dt-cli-wrapper/
 ├── dtgen                  # The tool itself
 ├── parameters/            # Parameter files (TOML)
 │   └── example.toml       # Fully annotated example
-├── prompts/               # Prompt files
-│   └── default.txt        # Optional; final fallback when no prompt is given
-├── enhancers/             # Prompt-enhancement presets (see Prompt Enhancement)
-│   └── z-image.txt        # Default preset
-└── data/                  # Internal data (t2s.txt: Traditional-to-Simplified map)
+└── prompts/               # Prompt files
+    └── default.txt        # Optional; final fallback when no prompt is given
 ```
 
 ## Basic Usage
@@ -47,7 +41,7 @@ dtgen -P example --prompt-file cube -o ~/Pictures/dt
 # parameters live in the parameter file (e.g. strength in parameters/i2i.toml)
 dtgen -P i2i -i input.png -p "studio portrait"
 
-# Enhance the prompt with a local ollama model before generating
+# Enhance the prompt with an LLM (local ollama by default) before generating
 # (interactive: review the result, then generate, re-enhance, or quit)
 dtgen -P example -p "一隻橘貓在窗台上睡覺" --enhance
 
@@ -75,7 +69,7 @@ dtgen -P example -p "test" --dry-run
 | `--negative-prompt <t>`  | `-n`  | Negative prompt text                                           |
 | `--negative-prompt-file` | `-N`  | Negative prompt file                                           |
 | `--image <path>`         | `-i`  | Input image for img2img                                        |
-| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via local ollama; default preset z-image    |
+| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via an LLM; default preset z-image          |
 | `--enhance-instruction`  | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
 | `--enhance-language <l>` | `-L`  | Output language of the enhanced prompt: en (default) or zh     |
 | `--enhance-once`         |       | Enhance once and generate directly, no interactive loop        |
@@ -88,20 +82,14 @@ dtgen -P example -p "test" --dry-run
 
 ## Name Resolution Rules
 
-`--parameter-file` and `--prompt-file` (including `--negative-prompt-file`)
-share the same rules:
+`--parameter-file` and `--prompt-file` (including `--negative-prompt-file`) share the same rules:
 
-- Values starting with `/`, `~`, `./` or `../` are treated as plain paths
-  (absolute, or relative to the current working directory).
-- Anything else is a name under `parameters/` or `prompts/`,
-  subdirectories allowed:
-  - When the last segment has no extension,
-    the default extension (`.toml` / `.txt`) is appended —
-    `-P example` means `parameters/example.toml`,
-    `-P zimage/portrait` means `parameters/zimage/portrait.toml`.
-  - When the last segment has an extension, it is used as-is —
-    `--prompt-file foo.md` means `prompts/foo.md`
-    (prompt files are not limited to `.txt`).
+- Values starting with `/`, `~`, `./` or `../` are treated as plain paths (absolute, or relative to the current working directory).
+- Anything else is a name under `parameters/` or `prompts/`, subdirectories allowed:
+  - When the last segment has no extension, the default extension (`.toml` / `.txt`) is appended —\
+    `-P example` means `parameters/example.toml`, `-P zimage/portrait` means `parameters/zimage/portrait.toml`.
+  - When the last segment has an extension, it is used as-is —\
+    `--prompt-file foo.md` means `prompts/foo.md` (prompt files are not limited to `.txt`).
 
 ## Prompt Resolution Order
 
@@ -111,174 +99,130 @@ share the same rules:
 4. `prompts/default.txt`
 5. Error when none of the above exists
 
-`prompt_prefix` / `prompt_suffix` from the parameter file are joined to the final
-prompt with `, ` — a suitable place for LoRA trigger words or fixed quality terms.
-The negative prompt follows the same order (command line over parameter file);
+`prompt_prefix` / `prompt_suffix` from the parameter file are joined to the final prompt with `, ` —\
+a suitable place for LoRA trigger words or fixed quality terms.\
+The negative prompt follows the same order (command line over parameter file);\
 when neither provides one, the model's recommended value applies.
 
 ### Prompt File Format
 
-- Any extension is accepted (`.txt`, `.md`, ...); the whole file is the prompt,
-  with line breaks and blank lines preserved as-is.
-- Lines starting with `# ` or `// ` (leading whitespace allowed;
-  a line consisting solely of `#` or `//` also counts) are comments
-  and are dropped entirely; `#` without a following space (e.g. `#tag`)
-  is not a comment.
+- Any extension is accepted (`.txt`, `.md`, ...);\
+  the whole file is the prompt, with line breaks and blank lines preserved as-is.
+- Lines starting with `# ` or `// ` (leading whitespace allowed; a line consisting solely of `#` or `//` also counts) are comments and are dropped entirely;\
+  `#` without a following space (e.g. `#tag`) is not a comment.\
   Only full-line comments are supported; trailing comments are not.
-- After filtering comments, leading and trailing whitespace is stripped
-  to produce the final prompt; negative prompt files and
-  `prompts/default.txt` follow the same rules.
+- After filtering comments, leading and trailing whitespace is stripped to produce the final prompt;\
+  negative prompt files and `prompts/default.txt` follow the same rules.
 
 ## Prompt Enhancement
 
-`--enhance` / `--enhance-instruction` rewrite the prompt with a local LLM
-served by [ollama](https://ollama.com) before generation,
-porting the "prompt-enhancer" script workflow from the Draw Things UI.
-Requirements: a running ollama service and a pulled model
-(defaults: `http://localhost:11434`, `qwen3.5:4b`;
-override via the `[enhancer]` section of the parameter file).
-The model's thinking mode is always disabled.
+`--enhance` / `--enhance-instruction` rewrite the prompt with an LLM before generation, porting the "prompt-enhancer" script workflow from the Draw Things UI.\
+The presets, the language handling and the model backends live in the [text-to-image-prompt-enhancer](https://github.com/Wujidadi/text-to-image-prompt-enhancer) package;\
+`dtgen` only adds the interactive review loop and the `[enhancer]` parameter-file section.\
+Without any configuration the backend is a local [ollama](https://ollama.com) service at `http://localhost:11434` with `qwen3.5:4b` (thinking disabled);\
+other local or cloud backends are selected through provider profiles in `~/.config/prompt-enhancer/config.toml` (see the package README for the file format and the supported provider types).
 
 ### Modes
 
-- `--enhance [<preset>]` — preset mode.
-  The optional value names a preset under `enhancers/`
-  (same resolution rules as `--prompt-file`, default extension `.txt`);
-  when omitted, `z-image` is used.
-  A preset file is the complete system instruction sent to the model;
-  edit or add files there to customize.
-- `--enhance-instruction <text>` — with `--enhance`,
-  the text is appended to the preset as an overriding requirement;
-  alone, it enables custom mode:
-  a rewrite that merges the instruction into the original prompt
-  (e.g. "add a straw hat") while keeping everything else intact.
+- `--enhance [<preset>]` — preset mode.\
+  The optional value names a preset (default `z-image`; subdirectories allowed, default extension `.txt`; values starting with `/`, `~`, `./` or `../` are plain paths).\
+  Presets are searched in `~/.config/prompt-enhancer/enhancers/` first, then among the presets bundled with the package, so a bundled preset can be overridden or a new one added by dropping a file into the user directory.\
+  A preset file is the complete system instruction sent to the model.
+- `--enhance-instruction <text>` — with `--enhance`, the text is appended to the preset as an overriding requirement;\
+  alone, it enables custom mode:\
+  a rewrite that merges the instruction into the original prompt (e.g. "add a straw hat") while keeping everything else intact.
 
 ### Output Language
 
-Regardless of the input language,
-the enhanced prompt is written in the selected output language:
-`en` (English, the default) or `zh` (Chinese).
-Selection precedence: `--enhance-language` >
-the parameter file's `[enhancer]` `language` > `en`.
+Regardless of the input language, the enhanced prompt is written in the selected output language:\
+`en` (English, the default) or `zh` (Chinese).\
+Selection precedence: `--enhance-language` > the parameter file's `[enhancer]` `language` > the package config's `language` > `en`.
 
-- `zh` deliberately means Simplified Chinese:
-  Chinese-capable image models (Qwen Image, Z-Image, ...) are trained
-  mostly on Simplified corpora, so it prompts better than Traditional.
-  Simplified output is guaranteed deterministically:
-  after the model call, any remaining Traditional characters are converted
-  char-by-char via the map in `data/t2s.txt`
-  (small models ignore the language directive on long Traditional input,
-  and model-side conversion can silently rewrite wording).
-- The option only makes sense for general and style presets.
-  Model-format presets whose target requires a specific language
-  can declare `# dtgen:fixed-language` as the first line of the preset file:
-  the line is stripped from the system instruction
-  and no language directive is added,
-  so the preset's own language rules stand as written.
-  `anima` and `ltx-video` ship with this pragma (their targets require
-  English) and therefore ignore the language selection entirely.
+- `zh` deliberately means Simplified Chinese:\
+  Chinese-capable image models (Qwen Image, Z-Image, ...) are trained mostly on Simplified corpora, so it prompts better than Traditional.\
+  Simplified output is guaranteed deterministically by a char-level Traditional-to-Simplified pass after the model call.
+- Model-format presets whose target requires a specific language (`anima`, `ltx-video`) carry a fixed-language pragma and ignore the language selection entirely.
 
 ### Interactive Loop
 
-When stdin is a terminal (and `--enhance-only` is not given),
-each enhancement round prints the result and asks for the next action:
+When stdin is a terminal (and `--enhance-only` is not given), each enhancement round prints the result and asks for the next action:
 
 - `g` — generate with the current enhanced prompt
 - `e` — feed the enhanced prompt back for another enhancement round
 - `i` — enter a new ad-hoc instruction, then re-enhance
 - `q` — quit without generating (exit status 0)
 
-When stdin is not a terminal, or `--enhance-once` is given,
-a single enhancement pass runs and generation proceeds directly.
+When stdin is not a terminal, or `--enhance-once` is given, a single enhancement pass runs and generation proceeds directly.
 
 ### Notes on Behavior
 
-- `--enhance-only` prints the final enhanced prompt to stdout and exits;
-  no model, parameter file, or output path is required.
-  It and `--enhance-once` both imply the default preset
-  when neither `--enhance` nor `--enhance-instruction` is given.
-- The prompt being enhanced may come from any source in the resolution order:
-  `--prompt`, `--prompt-file`, the parameter file's `prompt`,
-  or `prompts/default.txt`.
-- Enhancement applies to the bare prompt;
-  `prompt_prefix` / `prompt_suffix` are joined afterwards,
-  so LoRA trigger words are never rewritten by the enhancer.
+- `--enhance-only` prints the final enhanced prompt to stdout and exits;\
+  no model, parameter file, or output path is required.\
+  It and `--enhance-once` both imply the default preset when neither `--enhance` nor `--enhance-instruction` is given.
+- The prompt being enhanced may come from any source in the resolution order:\
+  `--prompt`, `--prompt-file`, the parameter file's `prompt`, or `prompts/default.txt`.
+- Enhancement applies to the bare prompt;\
+  `prompt_prefix` / `prompt_suffix` are joined afterwards, so LoRA trigger words are never rewritten by the enhancer.\
   The negative prompt is never touched.
-- Markdown code fences and wrapping quotes are stripped from the model output
-  (some presets, e.g. `ernie`, ask the model to answer in a code block).
-- `--dry-run` still performs the enhancement
-  (it is a real ollama call, but never triggers image generation),
-  so the printed command shows the actual final prompt.
+- Markdown code fences and wrapping quotes are stripped from the model output (some presets, e.g. `ernie`, ask the model to answer in a code block).
+- `--dry-run` still performs the enhancement (it is a real model call, but never triggers image generation), so the printed command shows the actual final prompt.
+- A failed model call aborts `dtgen` in non-interactive mode;\
+  in the interactive loop it leaves the prompt unchanged and asks for the next action.
 
 ### Bundled Presets
 
-| Preset                | Type    | Description                                  |
-| --------------------- | ------- | -------------------------------------------- |
-| `ernie`               | General | Detailed objective image description         |
-| `z-image`             | General | Faithful, aesthetic visual description       |
-| `anima`               | Model   | Anima tag-format prompt rules                |
-| `ltx-video`           | Model   | LTX-2.3 audio-video cinematic prompt         |
-| `leica-portrait`      | Style   | Cinematic photorealistic portrait            |
-| `ghibli-watercolor`   | Style   | Studio Ghibli watercolor painting            |
-| `cyberpunk-mecha`     | Style   | Futuristic cyberpunk concept art             |
-| `monet-impressionist` | Style   | Monet-like Impressionist oil painting        |
-| `vaporwave-surreal`   | Style   | Vaporwave retro-futurism aesthetic           |
-| `space-epic`          | Style   | Sci-fi space art with epic scale             |
-| `chinoiserie-ink`     | Style   | Modern Chinese splash-ink style              |
-| `vinyl-toy`           | Style   | Cute 3D Pop Mart vinyl toy style             |
-| `wabi-sabi-minimal`   | Style   | Wabi-sabi architectural minimalism           |
+| Preset                | Type    | Description                            |
+| --------------------- | ------- | -------------------------------------- |
+| `ernie`               | General | Detailed objective image description   |
+| `z-image`             | General | Faithful, aesthetic visual description |
+| `anima`               | Model   | Anima tag-format prompt rules          |
+| `ltx-video`           | Model   | LTX-2.3 audio-video cinematic prompt   |
+| `leica-portrait`      | Style   | Cinematic photorealistic portrait      |
+| `ghibli-watercolor`   | Style   | Studio Ghibli watercolor painting      |
+| `cyberpunk-mecha`     | Style   | Futuristic cyberpunk concept art       |
+| `monet-impressionist` | Style   | Monet-like Impressionist oil painting  |
+| `vaporwave-surreal`   | Style   | Vaporwave retro-futurism aesthetic     |
+| `space-epic`          | Style   | Sci-fi space art with epic scale       |
+| `chinoiserie-ink`     | Style   | Modern Chinese splash-ink style        |
+| `vinyl-toy`           | Style   | Cute 3D Pop Mart vinyl toy style       |
+| `wabi-sabi-minimal`   | Style   | Wabi-sabi architectural minimalism     |
 
 ## Seed and Output File Name
 
-- Seed precedence: `--seed` > `seed` in the parameter file > randomly generated.
-  A randomly generated seed is still passed to `draw-things-cli` explicitly,
-  so results are always reproducible.
-- `--output` is always treated as a directory;
-  when it does not exist, it is created recursively (like `mkdir -p`).
-  The file is always auto-named `<unix seconds>-<seed>.<ext>`,
-  e.g. `1787847667-42.png`, so the seed survives in the file name
-  even without the embedded metadata (see Metadata Embedding).
-  There is no custom file-name option;
+- Seed precedence: `--seed` > `seed` in the parameter file > randomly generated.\
+  A randomly generated seed is still passed to `draw-things-cli` explicitly, so results are always reproducible.
+- `--output` is always treated as a directory;\
+  when it does not exist, it is created recursively (like `mkdir -p`).\
+  The file is always auto-named `<unix seconds>-<seed>.<ext>`, e.g. `1787847667-42.png`, so the seed survives in the file name even without the embedded metadata (see Metadata Embedding).\
+  There is no custom file-name option;\
   rename afterwards with your own script if needed.
-- The auto-naming extension comes from `output_ext` in the parameter file,
-  defaulting to `png`; set it to `mp4` or `mov` for video models.
-- Before running, the actual output path is printed to stderr
-  (`dtgen: writing output to ...`).
+- The auto-naming extension comes from `output_ext` in the parameter file, defaulting to `png`;\
+  set it to `mp4` or `mov` for video models.
+- Before running, the actual output path is printed to stderr (`dtgen: writing output to ...`).
 
 ## Metadata Embedding
 
-`draw-things-cli` writes bare pixels only,
-so `dtgen` embeds generation metadata into the output PNG itself
-after a successful run,
-replicating the structure the Draw Things UI writes:
+`draw-things-cli` writes bare pixels only, so `dtgen` embeds generation metadata into the output PNG itself after a successful run, replicating the structure the Draw Things UI writes:
 
 - an `eXIf` chunk carrying the pixel dimensions;
 - an `iTXt` XMP block containing:
-  - `dc:description` — the prompt,
-    the negative prompt on a `-`-prefixed line,
-    and a human-readable parameter summary line
-    (`Steps: ..., Sampler: ..., Seed: ..., Size: ..., Model: ...`);
+  - `dc:description` — the prompt, the negative prompt on a `-`-prefixed line, and a human-readable parameter summary line (`Steps: ..., Sampler: ..., Seed: ..., Size: ..., Model: ...`);
   - `xmp:CreatorTool` — `Draw Things`;
-  - `exif:UserComment` — a JSON object whose `v2` member is the
-    `JSGenerationConfiguration` dictionary,
-    the same format the UI embeds and can read back.
+  - `exif:UserComment` — a JSON object whose `v2` member is the `JSGenerationConfiguration` dictionary, the same format the UI embeds and can read back.
 
-Only parameters known to `dtgen` are written:
-the parameter file's values plus command-line overrides,
-with the actual size taken from the generated PNG header.
-Model recommended settings that `dtgen` never saw are not included,
-and arguments passed through after `--` are not reflected.
-Set `embed_metadata = false` in the parameter file to disable embedding;
+Only parameters known to `dtgen` are written:\
+the parameter file's values plus command-line overrides, with the actual size taken from the generated PNG header.\
+Model recommended settings that `dtgen` never saw are not included, and arguments passed through after `--` are not reflected.\
+Set `embed_metadata = false` in the parameter file to disable embedding;\
 non-PNG outputs (`mp4`, `mov`) are always skipped.
 
 ## Parameter Files (TOML)
 
-All keys are optional; anything omitted falls back to Draw Things'
-recommended settings for the model.
-The only exception is `model` —
-it must be provided either in the file or via `--model`.
-Unknown keys produce a warning on stderr and are ignored,
-so a typo never fails silently.
+All keys are optional;\
+anything omitted falls back to Draw Things' recommended settings for the model.\
+The only exception is `model` —\
+it must be provided either in the file or via `--model`.\
+Unknown keys produce a warning on stderr and are ignored, so a typo never fails silently.
 
 ### Top-Level Keys
 
@@ -301,11 +245,9 @@ so a typo never fails silently.
 
 ### `[config]` — Advanced Overrides
 
-This table is converted to JSON verbatim and passed to `draw-things-cli`
-via `--config-json` (`JSGenerationConfiguration` format,
-merged onto the model's recommended settings).
-It covers what the command-line flags do not:
-sampler, shift, hires fix, LoRA, and so on.
+This table is converted to JSON verbatim and passed to `draw-things-cli` via `--config-json` (`JSGenerationConfiguration` format, merged onto the model's recommended settings).\
+It covers what the command-line flags do not:\
+sampler, shift, hires fix, LoRA, and so on.\
 Key names follow `JSGenerationConfiguration`; the tool does no translation.
 
 ```toml
@@ -321,13 +263,20 @@ version = "flux1"
 
 ### `[enhancer]` — Prompt Enhancement Backend
 
-Defaults apply when omitted (see Prompt Enhancement).
+Optional.\
+`provider` selects a profile from the package config file (`~/.config/prompt-enhancer/config.toml`; the built-in `ollama` profile when omitted);\
+every other key is passed to the package as an override on top of that profile.
 
-| Key        | Type   | Description                                            |
-| ---------- | ------ | ------------------------------------------------------ |
-| `url`      | string | ollama endpoint, default `http://localhost:11434`      |
-| `model`    | string | ollama model name, default `qwen3.5:4b`                |
-| `language` | string | Output language, en or zh; `--enhance-language` wins   |
+| Key           | Type   | Description                                                  |
+| ------------- | ------ | ------------------------------------------------------------ |
+| `provider`    | string | Profile name, e.g. `ollama`, or one defined in the config    |
+| `language`    | string | Output language, en or zh; `--enhance-language` wins         |
+| `type`        | string | Override the profile's type: `ollama`, `openai`, `anthropic` |
+| `model`       | string | Override the profile's model name                            |
+| `url`         | string | Override the profile's endpoint URL                          |
+| `api_key_env` | string | Environment variable holding the API key (cloud providers)   |
+| `timeout`     | int    | Request timeout in seconds, default 300                      |
+| `extra`       | table  | Merged verbatim into the request body (vendor options)       |
 
 ### `[backend]` — Execution Backend
 
@@ -355,16 +304,10 @@ Local generation by default when omitted.
 
 ## Notes
 
-- Images written by `draw-things-cli` itself carry no generation metadata;
-  the XMP block found in `dtgen` output is embedded by `dtgen`
-  as a post-processing step (see Metadata Embedding).
-  The auto-named output file preserves the seed even when embedding
-  is disabled or fails.
-- `dtgen` always passes `--output`,
-  so `draw-things-cli`'s native behavior of
-  "terminal preview only, no file written, when `--output` is omitted"
-  never occurs; to preview in the terminal, pass through `-- --terminal-image`.
-- On a parse failure, a missing file, or a missing model or prompt,
-  the tool exits with a non-zero status and explains why on stderr.
-- New `draw-things-cli` options not covered by the parameter file sections
-  can always be passed through after `--`, with no tool changes needed.
+- Images written by `draw-things-cli` itself carry no generation metadata;\
+  the XMP block found in `dtgen` output is embedded by `dtgen` as a post-processing step (see Metadata Embedding).\
+  The auto-named output file preserves the seed even when embedding is disabled or fails.
+- `dtgen` always passes `--output`, so `draw-things-cli`'s native behavior of "terminal preview only, no file written, when `--output` is omitted" never occurs;\
+  to preview in the terminal, pass through `-- --terminal-image`.
+- On a parse failure, a missing file, or a missing model or prompt, the tool exits with a non-zero status and explains why on stderr.
+- New `draw-things-cli` options not covered by the parameter file sections can always be passed through after `--`, with no tool changes needed.

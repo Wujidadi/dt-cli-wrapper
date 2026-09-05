@@ -1,56 +1,36 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "text-to-image-prompt-enhancer @ git+https://github.com/Wujidadi/text-to-image-prompt-enhancer@v0.1.0",
+# ]
+# ///
 """Wrapper for draw-things-cli generate: parameters live in TOML files, prompt and output path come from the command line"""
 
 import argparse
 import json
 import random
-import re
 import shlex
 import struct
 import subprocess
 import sys
 import time
 import tomllib
-import urllib.request
 import zlib
 from pathlib import Path
+
+from prompt_enhancer import DEFAULT_PRESET, Enhancer, PromptEnhancerError
 
 # Resolve to the tool's real directory even when run through a symlink
 TOOL_DIR = Path(__file__).resolve().parent
 PARAMETERS_DIR = TOOL_DIR / "parameters"
 PROMPTS_DIR = TOOL_DIR / "prompts"
-ENHANCERS_DIR = TOOL_DIR / "enhancers"
-T2S_MAP_PATH = TOOL_DIR / "data" / "t2s.txt"
 
 KNOWN_TOP_KEYS = {
     "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
     "output_ext", "steps", "cfg", "width", "height", "frames", "strength",
     "seed", "embed_metadata", "backend", "options", "config", "enhancer",
 }
-DEFAULT_ENHANCER = {"url": "http://localhost:11434", "model": "qwen3.5:4b",
-                    "language": "en"}
-DEFAULT_ENHANCE_PRESET = "z-image"
-# Chinese deliberately means Simplified: Chinese-capable image models are
-# trained mostly on Simplified corpora, so it prompts better
-LANGUAGE_DIRECTIVES = {
-    "en": "Regardless of the input language, write the final prompt in English.",
-    "zh": "Regardless of the input language, the final prompt MUST be written "
-          "entirely in Simplified Chinese (简体中文); convert any Traditional "
-          "Chinese characters to their Simplified forms.",
-}
-FIXED_LANGUAGE_PRAGMA = "# dtgen:fixed-language"
-CUSTOM_ENHANCE_RULE = """You are a professional prompt editor for image and video generation models.
-
-Your task:
-1. Produce exactly one final prompt from the original prompt and the custom instruction.
-2. When the instruction asks for a local change (e.g. "add a hat to the character"), merge that change into the original prompt and keep everything else intact; never produce multiple versions.
-3. The output must be a complete prompt that can directly replace the original.
-
-Do not output the original prompt, headings such as "Enhanced Prompt", explanations, comparisons, lists, Markdown, code blocks, or quotes wrapping the result."""
-ENHANCE_MARKERS = (
-    "Enhanced Prompt", "Modified Prompt", "Final Prompt",
-    "Rewritten Prompt", "Optimized Prompt", "Updated Prompt",
-)
 SAMPLING_FLAGS = {
     "steps": "--steps",
     "cfg": "--cfg",
@@ -170,113 +150,36 @@ def apply_prompt_affixes(text, params):
     return ", ".join(p for p in parts if p)
 
 
-def load_enhancer_rule(name):
-    path = resolve_named_path(name, ENHANCERS_DIR, ".txt")
-    if not path.is_file():
-        die(f"enhancer preset not found: {path}")
-    text = path.read_text(encoding="utf-8").strip()
-    first, _, rest = text.partition("\n")
-    if first.strip() == FIXED_LANGUAGE_PRAGMA:
-        return rest.strip(), True
-    return text, False
-
-
-_t2s_table = None
-
-
-def to_simplified(text):
-    """Deterministic char-level Traditional-to-Simplified conversion:
-    the LLM ignores the zh directive when the input is long Traditional
-    Chinese, and model-side conversion can silently rewrite wording"""
-    global _t2s_table
-    if _t2s_table is None:
-        if not T2S_MAP_PATH.is_file():
-            die(f"t2s character map not found: {T2S_MAP_PATH}")
-        lines = [l for l in T2S_MAP_PATH.read_text(encoding="utf-8").splitlines()
-                 if l and not l.startswith("#")]
-        _t2s_table = str.maketrans(lines[0], lines[1])
-    return text.translate(_t2s_table)
-
-
-def call_ollama(cfg, system, prompt):
-    payload = json.dumps({
-        "model": cfg["model"],
-        "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": prompt}],
-        "stream": False,
-        "think": False,
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        cfg["url"].rstrip("/") + "/api/chat", data=payload,
-        headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            reply = json.load(response)
-    except (OSError, ValueError) as e:
-        print(f"dtgen: ollama request failed: {e}", file=sys.stderr)
-        return None
-    return (reply.get("message") or {}).get("content", "")
-
-
-def clean_enhanced(text, strip_markers):
-    text = text.strip()
-    fenced = re.search(r"```[^\n]*\n(.*?)```", text, re.DOTALL)
-    if fenced:
-        text = fenced.group(1).strip()
-    if strip_markers:
-        best, best_len = -1, 0
-        for marker in ENHANCE_MARKERS:
-            index = text.rfind(marker)
-            if index > best:
-                best, best_len = index, len(marker)
-        if best != -1:
-            text = text[best + best_len:].strip()
-            text = re.sub(r"^[^\n]*[:：]\s*", "", text).strip()
-            text = re.sub(r"^[\s*#-]+", "", text).strip()
-    while len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
-        text = text[1:-1].strip()
-    return text
+def build_enhancer(args, params):
+    section = dict(params.get("enhancer", {}))
+    profile = section.pop("provider", None)
+    language = args.enhance_language or section.pop("language", None)
+    return Enhancer.from_config(profile, section, language=language)
 
 
 def enhance_prompt(text, args, params):
-    cfg = {**DEFAULT_ENHANCER, **params.get("enhancer", {})}
+    try:
+        enhancer = build_enhancer(args, params)
+    except PromptEnhancerError as e:
+        die(str(e))
     custom_mode = args.enhance is None
-    if custom_mode:
-        rule, fixed_language = CUSTOM_ENHANCE_RULE, False
-    else:
-        rule, fixed_language = load_enhancer_rule(args.enhance)
-    language = args.enhance_language or cfg["language"]
-    if language not in LANGUAGE_DIRECTIVES:
-        die(f'unknown enhancement language "{language}" '
-            f"(known: {', '.join(sorted(LANGUAGE_DIRECTIVES))})")
     instruction = args.enhance_instruction
     interactive = (not args.enhance_only and not args.enhance_once
                    and sys.stdin.isatty())
     current = text
     while True:
-        # The language directive must lead the system instruction: appended
-        # after a long rule it loses to the model's input-script copying
-        # (measured with qwen3.5:4b on Traditional Chinese input)
-        system = "" if fixed_language else LANGUAGE_DIRECTIVES[language] + "\n\n"
-        system += rule
-        if instruction:
-            system += ("\n\nCustom instruction (takes precedence over the rules "
-                       f"above): {instruction}")
         source = ("custom instruction" if custom_mode
                   else f"preset {args.enhance}")
-        print(f"dtgen: enhancing prompt (model {cfg['model']}, {source})...",
-              file=sys.stderr)
-        result = call_ollama(cfg, system, current)
-        if result is not None:
-            result = clean_enhanced(result, custom_mode)
-        if result:
-            if language == "zh" and not fixed_language:
-                result = to_simplified(result)
-            current = result
-        elif not interactive:
-            die("prompt enhancement failed")
-        else:
-            print("dtgen: enhancement failed, prompt unchanged", file=sys.stderr)
+        print(f"dtgen: enhancing prompt ({enhancer.provider.describe()}, "
+              f"{source})...", file=sys.stderr)
+        try:
+            current = enhancer.enhance(current, preset=args.enhance,
+                                       instruction=instruction)
+        except PromptEnhancerError as e:
+            if not interactive:
+                die(f"prompt enhancement failed: {e}")
+            print(f"dtgen: enhancement failed, prompt unchanged: {e}",
+                  file=sys.stderr)
         if not args.enhance_only:
             print("----- enhanced prompt -----", file=sys.stderr)
             print(current, file=sys.stderr)
@@ -501,13 +404,12 @@ def main():
     parser.add_argument("--negative-prompt-file", "-N", metavar="<file>",
                         help="negative prompt file, same resolution rules as "
                              "--prompt-file")
-    parser.add_argument("--enhance", "-e", nargs="?", const=DEFAULT_ENHANCE_PRESET,
+    parser.add_argument("--enhance", "-e", nargs="?", const=DEFAULT_PRESET,
                         metavar="<preset>",
-                        help="enhance the prompt with a local ollama model before "
-                             "generation; the optional value names an enhancer "
-                             "preset resolved under enhancers/ (default: "
-                             f"{DEFAULT_ENHANCE_PRESET}), same resolution rules "
-                             "as --prompt-file")
+                        help="enhance the prompt with an LLM before generation "
+                             "(local ollama by default); the optional value "
+                             "names a prompt-enhancer preset (default: "
+                             f"{DEFAULT_PRESET})")
     parser.add_argument("--enhance-instruction", "-E", metavar="<text>",
                         help="ad-hoc enhancement instruction; combined with "
                              "--enhance it is appended to the preset, alone it "
@@ -516,7 +418,8 @@ def main():
                         metavar="<lang>",
                         help="output language of the enhanced prompt: en or zh "
                              "(Simplified Chinese); overrides the parameter "
-                             "file's [enhancer] language, default en; presets "
+                             "file's [enhancer] language and the "
+                             "prompt-enhancer config, default en; presets "
                              "marked fixed-language ignore it")
     parser.add_argument("--enhance-once", action="store_true",
                         help="skip the interactive loop: enhance once and "
@@ -551,7 +454,7 @@ def main():
 
     if (args.enhance_only or args.enhance_once) and args.enhance is None \
             and args.enhance_instruction is None:
-        args.enhance = DEFAULT_ENHANCE_PRESET
+        args.enhance = DEFAULT_PRESET
     if args.enhance is not None or args.enhance_instruction is not None:
         prompt_text = enhance_prompt(prompt_text, args, params)
         if args.enhance_only:
