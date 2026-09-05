@@ -2,13 +2,16 @@
     // This file association must be set at both the Folder and Workspace levels
     "files.associations": {
         "**/prompts/**/*.txt": "ignore",
-        "**/enhancers/**/*.txt": "markdown"
+        "dtgen": "python"
     },
     "python-envs.pythonProjects": [
         {
-            "path": ".",
-            "envManager": "ms-python.python:system",
-            "packageManager": "ms-python.python:pip"
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip",
+            "path": "."
         }
+    ],
+    "python.analysis.include": [
+        "dtgen"
     ]
 }
