@@ -153,7 +153,8 @@ def apply_prompt_affixes(text, params):
 def build_enhancer(args, params):
     section = dict(params.get("enhancer", {}))
     profile = section.pop("provider", None)
-    language = args.enhance_language or section.pop("language", None)
+    language = args.enhance_language or section.get("language")
+    section.pop("language", None)
     return Enhancer.from_config(profile, section, language=language)
 
 
