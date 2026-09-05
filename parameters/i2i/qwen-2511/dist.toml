@@ -1,0 +1,38 @@
+# Qwen Image Edit 2511 preset, following the Draw Things official recommended settings
+# (MediaGenerationKit configs.json, "Qwen Image Edit 2511");
+# upstream Qwen notes 40 steps for optimal results, the official preset uses 30
+# Usage: dtgen -P i2i/qwen-2511/dist -i input.png -p "edit instruction"
+# Instruction-editing model: keep strength at 1.0 —
+# the input image conditions generation through the vision encoder,
+# unlike classic img2img where lower strength preserves the input
+model = "qwen_image_edit_2511_q6p.ckpt"
+
+negative_prompt = " "
+
+# 1024x1024 is the model's native default (defaultScale 16);
+# adjust to match the input image's aspect ratio so content is not cropped away
+width = 1024
+height = 1024
+steps = 30
+cfg = 4.0
+strength = 1.0
+
+embed_metadata = true
+
+[config]
+sampler = 17                         # UniPC Trailing
+seedMode = 2                         # Scale Alike
+shift = 2.0
+clipSkip = 1
+sharpness = 0.0
+maskBlur = 1.5
+maskBlurOutset = 0
+preserveOriginalAfterInpaint = true
+hiresFix = false
+tiledDecoding = false
+tiledDiffusion = false
+teaCache = false
+batchSize = 1
+batchCount = 1
+loras = []
+controls = []

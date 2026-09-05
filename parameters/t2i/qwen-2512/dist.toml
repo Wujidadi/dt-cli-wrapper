@@ -1,0 +1,33 @@
+model = "qwen_image_2512_q6p.ckpt"
+
+negative_prompt = "錯誤的肢體, 多餘的肢體, 超過兩隻手, 超過兩隻腳, 肢體畸形, 過度曝光, 普通臉, 平均臉, 典型AI臉, 千篇一律的臉, 相同五官, 雷同特徵, 通用臉型"
+
+width = 1280
+height = 1280
+steps = 4
+cfg = 1.0
+strength = 1.0
+
+[config]
+sampler = 15
+seedMode = 2
+shift = 2.0
+resolutionDependentShift = true
+sharpness = 0.0
+maskBlur = 1.5
+maskBlurOutset = 0
+preserveOriginalAfterInpaint = true
+colorCalibration = "none"
+hiresFix = false
+tiledDecoding = false
+tiledDiffusion = false
+batchSize = 1
+batchCount = 1
+upscaler = ""
+refinerModel = ""
+faceRestoration = ""
+controls = []
+
+[[config.loras]]
+file = "qwen_image_2512_lightning_4_step_v1.0_lora_f16.ckpt"
+weight = 1.0
