@@ -1,0 +1,11 @@
+# Tool configuration only: dtgen itself is a PEP 723 single-file script,
+# so this file deliberately has no [project] table
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["dtgen"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true

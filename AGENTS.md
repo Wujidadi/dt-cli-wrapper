@@ -31,6 +31,16 @@ this file only records what matters for development and maintenance.
 - Until the dependency's git tag is published, or to test against a local checkout of the package, bypass the inline metadata with `uv run --no-project --with <package dir> python dtgen ...`.
 - The editor (Pylance) resolves imports from `.venv/` (gitignored), created with `uv venv --python 3.11 .venv` and `uv pip install --python .venv -e <package dir>`;\
   the runtime never uses that venv, `uv run --script` builds its own environment from the inline metadata.
+- Unit tests live in `tests/` (pytest);\
+  `tests/conftest.py` loads the extensionless `dtgen` file as a module through `SourceFileLoader`, so tests import it as `dtgen`.\
+  Run them with the editor venv, which also carries `pytest` and `pytest-cov` (`uv pip install --python .venv pytest pytest-cov`):
+
+  ```sh
+  .venv/bin/python -m pytest --cov
+  ```
+
+  Coverage settings (`source`, branch mode) live in `pyproject.toml`, which holds tool configuration only and no `[project]` table;\
+  the suite is expected to keep `dtgen` at 100% line and branch coverage, and touches neither the network nor a real `draw-things-cli`.
 - `dtgen -p "..." --enhance-only` exercises the enhancement path alone:\
   no model, parameter file, or output involved.
 - For end-to-end tests, use reduced parameters (e.g. 448x448, steps 2) instead of running full-size defaults.
