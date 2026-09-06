@@ -76,6 +76,18 @@ class TestBuildEnhancer:
         enhancer = mod.build_enhancer(make_args(enhance_language="en"), params)
         assert enhancer.from_config_args == (None, {}, "en")
 
+    def test_cli_provider_overrides_section(self, mod, make_args, fake_enhancer):
+        fake_enhancer()
+        params = {"enhancer": {"provider": "prof", "model": "m"}}
+        enhancer = mod.build_enhancer(make_args(enhance_provider="cli"), params)
+        assert enhancer.from_config_args == ("cli", {"model": "m"}, None)
+
+    def test_cli_model_overrides_section(self, mod, make_args, fake_enhancer):
+        fake_enhancer()
+        params = {"enhancer": {"model": "m", "url": "u"}}
+        enhancer = mod.build_enhancer(make_args(enhance_model="cli"), params)
+        assert enhancer.from_config_args == (None, {"model": "cli", "url": "u"}, None)
+
     def test_without_section(self, mod, make_args, fake_enhancer):
         fake_enhancer()
         assert mod.build_enhancer(make_args(), {}).from_config_args == (None, {}, None)

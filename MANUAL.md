@@ -1,6 +1,6 @@
 # dtgen User Manual
 
-> Last updated: 2026-09-06T16:16:59+08:00
+> Last updated: 2026-09-06T19:23:09+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:\
 generation parameters are centralized in TOML files, the prompt and output path come from the command line, and everything else (model resolution, recommended settings, the actual generation) is left to `draw-things-cli`.
@@ -71,6 +71,8 @@ dtgen -P example -p "test" --dry-run
 | `--image <path>`         | `-i`  | Input image for img2img                                        |
 | `--enhance [<preset>]`   | `-e`  | Enhance the prompt via an LLM; default preset z-image          |
 | `--enhance-instruction`  | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
+| `--enhance-provider <p>` | `-R`  | Provider profile from the prompt-enhancer config               |
+| `--enhance-model <m>`    | `-M`  | Model name for the enhancement provider                        |
 | `--enhance-language <l>` | `-L`  | Output language of the enhanced prompt: en (default) or zh     |
 | `--enhance-once`         |       | Enhance once and generate directly, no interactive loop        |
 | `--enhance-only`         |       | Print the enhanced prompt to stdout, skip generation           |
@@ -120,7 +122,9 @@ when neither provides one, the model's recommended value applies.
 The presets, the language handling and the model backends live in the [text-to-image-prompt-enhancer](https://github.com/Wujidadi/text-to-image-prompt-enhancer) package;\
 `dtgen` only adds the interactive review loop and the `[enhancer]` parameter-file section.\
 Without any configuration the backend is a local [ollama](https://ollama.com) service at `http://localhost:11434` with `qwen3.5:4b` (thinking disabled);\
-other local or cloud backends are selected through provider profiles in `~/.config/prompt-enhancer/config.toml` (see the package README for the file format and the supported provider types).
+other local or cloud backends are selected through provider profiles in `~/.config/prompt-enhancer/config.toml` (see the package README for the file format and the supported provider types).\
+Profile precedence: `--enhance-provider` > the parameter file's `[enhancer]` `provider` > the package config's `default_provider` > the built-in `ollama` profile.\
+Model precedence: `--enhance-model` > the parameter file's `[enhancer]` `model` > the profile's `model`.
 
 ### Modes
 
@@ -267,16 +271,16 @@ Optional.\
 `provider` selects a profile from the package config file (`~/.config/prompt-enhancer/config.toml`; the built-in `ollama` profile when omitted);\
 every other key is passed to the package as an override on top of that profile.
 
-| Key           | Type   | Description                                                               |
-| ------------- | ------ | ------------------------------------------------------------------------- |
-| `provider`    | string | Profile name, e.g. `ollama`, or one defined in the config                 |
-| `language`    | string | Output language, en or zh; `--enhance-language` wins                      |
-| `type`        | string | Override the profile's type: `ollama`, `openai`, `wavespeed`, `anthropic` |
-| `model`       | string | Override the profile's model name                                         |
-| `url`         | string | Override the profile's endpoint URL                                       |
-| `api_key_env` | string | Environment variable holding the API key (cloud providers)                |
-| `timeout`     | int    | Request timeout in seconds, default 300                                   |
-| `extra`       | table  | Merged verbatim into the request body (vendor options)                    |
+| Key           | Type   | Description                                                                          |
+| ------------- | ------ | ------------------------------------------------------------------------------------ |
+| `provider`    | string | Profile name, e.g. `ollama`, or one defined in the config; `--enhance-provider` wins |
+| `language`    | string | Output language, en or zh; `--enhance-language` wins                                 |
+| `type`        | string | Override the profile's type: `ollama`, `openai`, `wavespeed`, `anthropic`            |
+| `model`       | string | Override the profile's model name; `--enhance-model` wins                            |
+| `url`         | string | Override the profile's endpoint URL                                                  |
+| `api_key_env` | string | Environment variable holding the API key (cloud providers)                           |
+| `timeout`     | int    | Request timeout in seconds, default 300                                              |
+| `extra`       | table  | Merged verbatim into the request body (vendor options)                               |
 
 ### `[backend]` — Execution Backend
 

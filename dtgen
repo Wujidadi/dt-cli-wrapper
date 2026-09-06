@@ -152,7 +152,10 @@ def apply_prompt_affixes(text, params):
 
 def build_enhancer(args, params):
     section = dict(params.get("enhancer", {}))
-    profile = section.pop("provider", None)
+    profile = args.enhance_provider or section.get("provider")
+    section.pop("provider", None)
+    if args.enhance_model:
+        section["model"] = args.enhance_model
     language = args.enhance_language or section.get("language")
     section.pop("language", None)
     return Enhancer.from_config(profile, section, language=language)
@@ -415,6 +418,16 @@ def main():
                         help="ad-hoc enhancement instruction; combined with "
                              "--enhance it is appended to the preset, alone it "
                              "implies enhancement in custom-instruction mode")
+    parser.add_argument("--enhance-provider", "-R", metavar="<profile>",
+                        help="provider profile from the prompt-enhancer config "
+                             "(~/.config/prompt-enhancer/config.toml); "
+                             "overrides the parameter file's [enhancer] "
+                             "provider, default: the config's default_provider "
+                             "or the built-in local ollama profile")
+    parser.add_argument("--enhance-model", "-M", metavar="<model>",
+                        help="model name for the enhancement provider; "
+                             "overrides the parameter file's [enhancer] model "
+                             "and the profile's model")
     parser.add_argument("--enhance-language", "-L", choices=["en", "zh"],
                         metavar="<lang>",
                         help="output language of the enhanced prompt: en or zh "

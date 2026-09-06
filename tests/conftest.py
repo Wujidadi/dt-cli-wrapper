@@ -35,7 +35,8 @@ def make_args():
         defaults = dict(
             parameter_file=None, prompt=None, prompt_file=None,
             negative_prompt=None, negative_prompt_file=None,
-            enhance=None, enhance_instruction=None, enhance_language=None,
+            enhance=None, enhance_instruction=None, enhance_provider=None,
+            enhance_model=None, enhance_language=None,
             enhance_once=False, enhance_only=False,
             image=None, model=None, seed=None, output=None, dry_run=False,
         )
