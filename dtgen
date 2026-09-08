@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "text-to-image-prompt-enhancer @ git+https://github.com/Wujidadi/text-to-image-prompt-enhancer@v0.2.0",
-#   "image-to-text-interrogator @ git+https://github.com/Wujidadi/image-to-text-interrogator@v0.3.0",
+#   "image-to-text-interrogator @ git+https://github.com/Wujidadi/image-to-text-interrogator@v0.4.0",
 # ]
 # ///
 """Wrapper for draw-things-cli generate: parameters live in TOML files, prompt and output path come from the command line (or from an image, through interrogation)"""
