@@ -38,6 +38,9 @@ def make_args():
             enhance=None, enhance_instruction=None, enhance_provider=None,
             enhance_model=None, enhance_language=None,
             enhance_once=False, enhance_only=False,
+            interrogate=None, interrogate_preset=None, interrogate_instruction=None,
+            interrogate_provider=None, interrogate_model=None, interrogate_language=None,
+            interrogate_explicit=False, interrogate_once=False, interrogate_only=False,
             image=None, model=None, seed=None, output=None, dry_run=False,
         )
         defaults.update(overrides)
@@ -92,6 +95,53 @@ def fake_enhancer(monkeypatch):
         state["replies"] = list(replies) or ["enhanced"]
         state["error"] = error
         return FakeEnhancer.instances
+
+    return configure
+
+
+class FakeInterrogator:
+    """Stand-in for image_interrogator.Interrogator: `replies` are returned
+    (or raised, when they are exceptions) in order by successive
+    interrogate() calls"""
+    instances = []
+
+    def __init__(self, replies):
+        self.provider = FakeProvider()
+        self.replies = list(replies)
+        self.calls = []
+        self.from_config_args = None
+        FakeInterrogator.instances.append(self)
+
+    def interrogate(self, image, *, preset=None, instruction=None, explicit=False):
+        self.calls.append((image, preset, instruction, explicit))
+        reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+
+@pytest.fixture
+def fake_interrogator(monkeypatch):
+    """Patch dtgen.Interrogator so from_config() yields a FakeInterrogator
+    with the given replies; returns the factory used to configure it"""
+    FakeInterrogator.instances.clear()
+    state = {"replies": ["interrogated"], "error": None}
+
+    class Patched:
+        @classmethod
+        def from_config(cls, provider, overrides, *, language=None):
+            if state["error"] is not None:
+                raise state["error"]
+            instance = FakeInterrogator(state["replies"])
+            instance.from_config_args = (provider, overrides, language)
+            return instance
+
+    monkeypatch.setattr(dtgen, "Interrogator", Patched)
+
+    def configure(*replies, error=None):
+        state["replies"] = list(replies) or ["interrogated"]
+        state["error"] = error
+        return FakeInterrogator.instances
 
     return configure
 

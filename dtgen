@@ -3,9 +3,10 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "text-to-image-prompt-enhancer @ git+https://github.com/Wujidadi/text-to-image-prompt-enhancer@v0.2.0",
+#   "image-to-text-interrogator @ git+https://github.com/Wujidadi/image-to-text-interrogator@v0.3.0",
 # ]
 # ///
-"""Wrapper for draw-things-cli generate: parameters live in TOML files, prompt and output path come from the command line"""
+"""Wrapper for draw-things-cli generate: parameters live in TOML files, prompt and output path come from the command line (or from an image, through interrogation)"""
 
 import argparse
 import json
@@ -19,6 +20,8 @@ import tomllib
 import zlib
 from pathlib import Path
 
+from image_interrogator import DEFAULT_PRESET as DEFAULT_INTERROGATOR_PRESET
+from image_interrogator import ImageInterrogatorError, Interrogator
 from prompt_enhancer import DEFAULT_PRESET, Enhancer, PromptEnhancerError
 
 # Resolve to the tool's real directory even when run through a symlink
@@ -30,7 +33,10 @@ KNOWN_TOP_KEYS = {
     "model", "prompt", "negative_prompt", "prompt_prefix", "prompt_suffix",
     "output_ext", "steps", "cfg", "width", "height", "frames", "strength",
     "seed", "embed_metadata", "backend", "options", "config", "enhancer",
+    "interrogator",
 }
+# Value of --interrogate given without a path: use the img2img input image
+INTERROGATE_FROM_IMAGE = "<image>"
 SAMPLING_FLAGS = {
     "steps": "--steps",
     "cfg": "--cfg",
@@ -211,6 +217,95 @@ def enhance_prompt(text, args, params):
                     print("dtgen: empty instruction, keeping the previous one",
                           file=sys.stderr)
                 break
+            if choice == "q":
+                sys.exit(0)
+
+
+def build_interrogator(args, params):
+    section = dict(params.get("interrogator", {}))
+    profile = args.interrogate_provider or section.get("provider")
+    language = args.interrogate_language or section.get("language")
+    for key in ("provider", "language", "preset", "explicit"):
+        section.pop(key, None)
+    if args.interrogate_model:
+        section["model"] = args.interrogate_model
+    return Interrogator.from_config(profile, section, language=language)
+
+
+def interrogate_options(args, params):
+    """(preset, explicit) with the command line over the parameter file"""
+    section = params.get("interrogator", {})
+    preset = (args.interrogate_preset or section.get("preset")
+              or DEFAULT_INTERROGATOR_PRESET)
+    explicit = bool(args.interrogate_explicit or section.get("explicit", False))
+    return preset, explicit
+
+
+def resolve_interrogate_image(args):
+    value = args.interrogate
+    if value == INTERROGATE_FROM_IMAGE:
+        if not args.image:
+            die("--interrogate without a path takes the image from --image, "
+                "which is not given")
+        value = args.image
+    return Path(value).expanduser()
+
+
+def interrogate_image(args, params):
+    """Reconstruct the prompt from the image, with the interactive review
+    loop when stdin is a terminal"""
+    try:
+        interrogator = build_interrogator(args, params)
+    except ImageInterrogatorError as e:
+        die(str(e))
+    image = resolve_interrogate_image(args)
+    preset, explicit = interrogate_options(args, params)
+    instruction = args.interrogate_instruction
+    interactive = (not args.interrogate_only and not args.interrogate_once
+                   and sys.stdin.isatty())
+    current = None
+    while True:
+        print(f"dtgen: interrogating {image} ({interrogator.provider.describe()}, "
+              f"preset {preset})...", file=sys.stderr)
+        try:
+            current = interrogator.interrogate(image, preset=preset,
+                                               instruction=instruction, explicit=explicit)
+        except ImageInterrogatorError as e:
+            if not interactive or current is None:
+                die(f"image interrogation failed: {e}")
+            print(f"dtgen: interrogation failed, prompt unchanged: {e}", file=sys.stderr)
+        if not args.interrogate_only:
+            print("----- interrogated prompt -----", file=sys.stderr)
+            print(current, file=sys.stderr)
+            print("-------------------------------", file=sys.stderr)
+        if not interactive:
+            return current
+        while True:
+            try:
+                choice = input("dtgen: [g]enerate  [r]e-interrogate  [i]nstruction  "
+                               "[e]nhance  [q]uit > ").strip().lower()
+            except EOFError:
+                sys.exit(0)
+            if choice == "g":
+                return current
+            if choice == "r":
+                break
+            if choice == "i":
+                try:
+                    entered = input("dtgen: instruction > ").strip()
+                except EOFError:
+                    sys.exit(0)
+                if entered:
+                    instruction = entered
+                else:
+                    print("dtgen: empty instruction, keeping the previous one",
+                          file=sys.stderr)
+                break
+            if choice == "e":
+                if args.enhance is None and args.enhance_instruction is None:
+                    args.enhance = DEFAULT_PRESET
+                current = enhance_prompt(current, args, params)
+                continue
             if choice == "q":
                 sys.exit(0)
 
@@ -441,6 +536,37 @@ def main():
     parser.add_argument("--enhance-only", action="store_true",
                         help="print the enhanced prompt to stdout and exit "
                              "without generating")
+    parser.add_argument("--interrogate", "-I", nargs="?", const=INTERROGATE_FROM_IMAGE,
+                        metavar="<path>",
+                        help="reconstruct the prompt from an image with a vision LLM "
+                             "and use it as this run's prompt; without a value the "
+                             "--image input is interrogated; mutually exclusive with "
+                             "--prompt and --prompt-file")
+    parser.add_argument("--interrogate-preset", metavar="<preset>",
+                        help="image-interrogator preset (faithful, concise, tags, ...); "
+                             "overrides the parameter file's [interrogator] preset, "
+                             f"default {DEFAULT_INTERROGATOR_PRESET}")
+    parser.add_argument("--interrogate-instruction", metavar="<text>",
+                        help="ad-hoc instruction appended to the interrogation preset")
+    parser.add_argument("--interrogate-provider", metavar="<profile>",
+                        help="provider profile from the image-interrogator config "
+                             "(~/.config/image-interrogator/config.toml); overrides "
+                             "the parameter file's [interrogator] provider")
+    parser.add_argument("--interrogate-model", metavar="<model>",
+                        help="model name for the interrogation provider; overrides "
+                             "the parameter file's [interrogator] model")
+    parser.add_argument("--interrogate-language", choices=["en", "zh"], metavar="<lang>",
+                        help="language of the reconstructed prompt: en or zh "
+                             "(Simplified Chinese); overrides the parameter file's "
+                             "[interrogator] language, default en")
+    parser.add_argument("--interrogate-explicit", action="store_true",
+                        help="ask for adult and sexually explicit elements to be "
+                             "described accurately instead of softened or omitted")
+    parser.add_argument("--interrogate-once", action="store_true",
+                        help="skip the interactive loop: interrogate once and proceed")
+    parser.add_argument("--interrogate-only", action="store_true",
+                        help="print the reconstructed (and, with --enhance flags, "
+                             "enhanced) prompt to stdout and exit without generating")
     parser.add_argument("--image", "-i", metavar="<path>",
                         help="input image for img2img "
                              "(absolute or relative to the current directory)")
@@ -464,7 +590,14 @@ def main():
 
     if args.prompt is not None and args.prompt_file is not None:
         die("--prompt and --prompt-file are mutually exclusive")
-    prompt_text = resolve_prompt_text(args, params)
+    if (args.interrogate_only or args.interrogate_once) and args.interrogate is None:
+        die("--interrogate-only and --interrogate-once need --interrogate")
+    if args.interrogate is not None:
+        if args.prompt is not None or args.prompt_file is not None:
+            die("--interrogate is mutually exclusive with --prompt and --prompt-file")
+        prompt_text = interrogate_image(args, params)
+    else:
+        prompt_text = resolve_prompt_text(args, params)
 
     if (args.enhance_only or args.enhance_once) and args.enhance is None \
             and args.enhance_instruction is None:
@@ -474,6 +607,9 @@ def main():
         if args.enhance_only:
             print(prompt_text)
             return
+    if args.interrogate_only:
+        print(prompt_text)
+        return
     prompt = apply_prompt_affixes(prompt_text, params)
 
     model = args.model or params.get("model")

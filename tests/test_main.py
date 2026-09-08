@@ -356,3 +356,58 @@ def test_script_entry_point_runs_main(tmp_path, monkeypatch, capsys):
     runpy.run_path(str(DTGEN_PATH), run_name="__main__")
     out = capsys.readouterr().out
     assert shlex.split(out)[:4] == ["draw-things-cli", "generate", "--model", "m"]
+
+
+def _dry_run_noisy(env, capsys, *argv):
+    """Like _dry_run, for runs whose stderr carries interrogation progress"""
+    env.main(*argv, "--dry-run")
+    out, err = capsys.readouterr()
+    assert "unknown key" not in err
+    return shlex.split(out.strip())
+
+
+class TestMainInterrogate:
+    def test_interrogate_only_prints_and_stops(self, env, capsys, fake_interrogator):
+        fake_interrogator("a cat")
+        env.main("-I", "photo.png", "--interrogate-only")
+        out, _ = capsys.readouterr()
+        assert out == "a cat\n" and env.run.commands == []
+
+    def test_interrogated_prompt_feeds_generation(self, env, capsys, fake_interrogator, mod):
+        instances = fake_interrogator("a cat")
+        (env.params / "p.toml").write_text(
+            'model = "m"\nprompt_prefix = "pre"\n[interrogator]\npreset = "tags"\n')
+        cmd = _dry_run_noisy(env, capsys, "-P", "p", "-I", "photo.png", "--interrogate-once", "-s", "1")
+        assert cmd[cmd.index("--prompt") + 1] == "pre, a cat"
+        assert instances[0].calls[0][1] == "tags"
+
+    def test_bare_flag_interrogates_the_img2img_input(self, env, capsys, fake_interrogator):
+        instances = fake_interrogator("a cat")
+        cmd = _dry_run_noisy(env, capsys, "-m", "m", "-i", "in.png", "-I", "--interrogate-once", "-s", "1")
+        assert str(instances[0].calls[0][0]) == "in.png"
+        assert cmd[cmd.index("--image") + 1] == "in.png"
+
+    def test_interrogate_then_enhance(self, env, capsys, fake_interrogator, fake_enhancer):
+        fake_interrogator("a cat")
+        enhancers = fake_enhancer("a richer cat")
+        env.main("-I", "photo.png", "--interrogate-only", "--enhance-once")
+        assert capsys.readouterr().out == "a richer cat\n"
+        assert enhancers[0].calls[0][0] == "a cat"
+
+    def test_interrogate_excludes_prompt_sources(self, env, capsys, fake_interrogator):
+        fake_interrogator("a cat")
+        for flag in (("-p", "x"), ("-f", "x")):
+            with pytest.raises(SystemExit):
+                env.main("-I", "photo.png", *flag)
+            assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_interrogate_modifiers_need_the_flag(self, env, capsys):
+        for flag in ("--interrogate-only", "--interrogate-once"):
+            with pytest.raises(SystemExit):
+                env.main("-p", "x", flag)
+            assert "--interrogate" in capsys.readouterr().err
+
+    def test_interrogator_is_a_known_parameter_key(self, env, capsys, fake_interrogator):
+        fake_interrogator("a cat")
+        (env.params / "p.toml").write_text('model = "m"\n[interrogator]\npreset = "tags"\n')
+        _dry_run_noisy(env, capsys, "-P", "p", "-I", "photo.png", "--interrogate-once", "-s", "1")

@@ -8,8 +8,8 @@ this file only records what matters for development and maintenance.
 ## Architecture and Files
 
 - `dtgen`: single-file Python 3 script (requires 3.11+), meant to be symlinked into a directory on `PATH`.\
-  Its shebang is `uv run --script`, and its only dependency is `text-to-image-prompt-enhancer` (GitHub `Wujidadi/text-to-image-prompt-enhancer`, local checkout at `~/Documents/Workspaces/AI/Text-to-image/prompt-enhancer`), declared as PEP 723 inline metadata pinned to a release tag;\
-  bump the tag there when the package changes.\
+  Its shebang is `uv run --script`, and its dependencies are `text-to-image-prompt-enhancer` (GitHub `Wujidadi/text-to-image-prompt-enhancer`, local checkout at `~/Documents/Workspaces/AI/Text-to-image/prompt-enhancer`) and `image-to-text-interrogator` (GitHub `Wujidadi/image-to-text-interrogator`, local checkout at `~/Documents/Workspaces/AI/Image-to-Text/image-interrogator`), declared as PEP 723 inline metadata pinned to release tags;\
+  bump the tag there when a package changes.\
   The script locates its real directory via `Path(__file__).resolve()`, so `parameters/` and `prompts/` always resolve relative to the tool's directory, never the cwd.
 - `parameters/`: TOML parameter files.\
   `example.toml` is a fully annotated template (including the complete sampler / seedMode enum tables);\
@@ -21,6 +21,11 @@ this file only records what matters for development and maintenance.
   presets, language directives, the Traditional-to-Simplified pass, output cleanup and the provider backends all live in the `text-to-image-prompt-enhancer` package (`prompt_enhancer` module);\
   `dtgen` keeps only the interactive review loop and maps the parameter file's `[enhancer]` section onto `Enhancer.from_config(provider, overrides, language=...)`.\
   Change enhancement behavior in that package, not here.
+- Image interrogation (`--interrogate` / `-I` and the `--interrogate-*` flags):\
+  presets, language handling, provider backends, retries and the fallback chain live in the `image-to-text-interrogator` package (`image_interrogator` module);\
+  `dtgen` keeps only the review loop (`interrogate_image`) and maps the parameter file's `[interrogator]` section onto `Interrogator.from_config(provider, overrides, language=...)`, with `preset` and `explicit` taken out of the section as call options.\
+  Interrogation only runs on an explicit flag, never implicitly for an img2img input.\
+  The package surface used here: `DEFAULT_PRESET`, `Interrogator.from_config(...)`, `interrogator.interrogate(image, preset=..., instruction=..., explicit=...)`, `interrogator.provider.describe()`, `ImageInterrogatorError`.
 - `MANUAL.md`: the user manual.\
   **It must be updated in sync whenever tool behavior changes**;\
   the timestamp at the top must be obtained by actually running a command, and tables must be re-aligned after edits.
@@ -28,8 +33,8 @@ this file only records what matters for development and maintenance.
 ## Development and Testing
 
 - Always verify argument assembly with `dtgen ... --dry-run`, which never triggers generation (with `--enhance` it still calls the model for the enhancement itself).
-- Until the dependency's git tag is published, or to test against a local checkout of the package, bypass the inline metadata with `uv run --no-project --with <package dir> python dtgen ...`.
-- The editor (Pylance) resolves imports from `.venv/` (gitignored), created with `uv venv --python 3.11 .venv` and `uv pip install --python .venv -e <package dir>`;\
+- Until a dependency's git tag is published, or to test against local checkouts of the packages, bypass the inline metadata with `uv run --no-project --with <package dir> --with <other package dir> python dtgen ...`.
+- The editor (Pylance) resolves imports from `.venv/` (gitignored), created with `uv venv --python 3.11 .venv` and `uv pip install --python .venv -e <package dir>` for each package;\
   the runtime never uses that venv, `uv run --script` builds its own environment from the inline metadata.
 - Unit tests live in `tests/` (pytest);\
   `tests/conftest.py` loads the extensionless `dtgen` file as a module through `SourceFileLoader`, so tests import it as `dtgen`.\
@@ -41,7 +46,7 @@ this file only records what matters for development and maintenance.
 
   Coverage settings (`source`, branch mode) live in `pyproject.toml`, which holds tool configuration only and no `[project]` table;\
   the suite is expected to keep `dtgen` at 100% line and branch coverage, and touches neither the network nor a real `draw-things-cli`.
-- `dtgen -p "..." --enhance-only` exercises the enhancement path alone:\
+- `dtgen -p "..." --enhance-only` exercises the enhancement path alone, and `dtgen -I <image> --interrogate-only` the interrogation path alone:\
   no model, parameter file, or output involved.
 - For end-to-end tests, use reduced parameters (e.g. 448x448, steps 2) instead of running full-size defaults.
 - Models live in the directory set by `[backend] models_dir` (or Draw Things' default location);\

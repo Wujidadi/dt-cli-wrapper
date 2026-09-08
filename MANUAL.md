@@ -1,15 +1,15 @@
 # dtgen User Manual
 
-> Last updated: 2026-09-06T19:23:09+08:00
+> Last updated: 2026-09-08T19:42:16+08:00
 
 `dtgen` is a wrapper for `draw-things-cli generate`:\
-generation parameters are centralized in TOML files, the prompt and output path come from the command line, and everything else (model resolution, recommended settings, the actual generation) is left to `draw-things-cli`.
+generation parameters are centralized in TOML files, the prompt and output path come from the command line (or the prompt is reconstructed from an image), and everything else (model resolution, recommended settings, the actual generation) is left to `draw-things-cli`.
 
 ## Installation and Directory Layout
 
 - The tool itself is `dtgen` in this directory (single-file Python 3 script, requires Python 3.11+).\
-  Its only dependency is the [text-to-image-prompt-enhancer](https://github.com/Wujidadi/text-to-image-prompt-enhancer) package, declared as PEP 723 inline script metadata at the top of the file and pinned to a release tag;\
-  the shebang runs the script through `uv run --script`, so [uv](https://docs.astral.sh/uv/) must be installed, and the first run resolves the dependency into uv's cache (network access needed once).
+  Its dependencies are the [text-to-image-prompt-enhancer](https://github.com/Wujidadi/text-to-image-prompt-enhancer) and [image-to-text-interrogator](https://github.com/Wujidadi/image-to-text-interrogator) packages, declared as PEP 723 inline script metadata at the top of the file and pinned to release tags;\
+  the shebang runs the script through `uv run --script`, so [uv](https://docs.astral.sh/uv/) must be installed, and the first run resolves the dependencies into uv's cache (network access needed once).
 - Symlink it into any directory on your `PATH` to run it from anywhere;\
   the script resolves the symlink by itself, so `parameters/` and `prompts/` always resolve to the tool's real directory.
 
@@ -52,6 +52,15 @@ dtgen -P example -p "a girl on a beach" -E "add a straw hat"
 # Print the enhanced prompt and exit without generating
 dtgen -p "a fox in snow" --enhance-only
 
+# Reconstruct the prompt from an image with a vision LLM, review it, then generate
+dtgen -P example -I reference.png
+
+# Interrogate the img2img input itself, then restyle the result with the enhancer
+dtgen -P i2i -i input.png -I --enhance ghibli-watercolor
+
+# Print the reconstructed prompt and exit without generating
+dtgen -I reference.png --interrogate-only
+
 # Extra options after "--" are passed through to draw-things-cli
 dtgen -P example -p "test" -- --terminal-image
 
@@ -61,26 +70,35 @@ dtgen -P example -p "test" --dry-run
 
 ## Command-Line Options
 
-| Option                   | Short | Description                                                    |
-| ------------------------ | ----- | -------------------------------------------------------------- |
-| `--parameter-file <f>`   | `-P`  | Parameter file                                                 |
-| `--prompt <text>`        | `-p`  | Prompt text                                                    |
-| `--prompt-file <f>`      | `-f`  | Prompt file                                                    |
-| `--negative-prompt <t>`  | `-n`  | Negative prompt text                                           |
-| `--negative-prompt-file` | `-N`  | Negative prompt file                                           |
-| `--image <path>`         | `-i`  | Input image for img2img                                        |
-| `--enhance [<preset>]`   | `-e`  | Enhance the prompt via an LLM; default preset z-image          |
-| `--enhance-instruction`  | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
-| `--enhance-provider <p>` | `-R`  | Provider profile from the prompt-enhancer config               |
-| `--enhance-model <m>`    | `-M`  | Model name for the enhancement provider                        |
-| `--enhance-language <l>` | `-L`  | Output language of the enhanced prompt: en (default) or zh     |
-| `--enhance-once`         |       | Enhance once and generate directly, no interactive loop        |
-| `--enhance-only`         |       | Print the enhanced prompt to stdout, skip generation           |
-| `--model <model>`        | `-m`  | Model; overrides the parameter file; required without one      |
-| `--seed <n>`             | `-s`  | Random seed; overrides the parameter file; random when omitted |
-| `--output <dir>`         | `-o`  | Output directory; created when missing; default: current dir   |
-| `--dry-run`              |       | Print the command without executing it                         |
-| Arguments after `--`     |       | Passed through to `draw-things-cli generate` verbatim          |
+| Option                      | Short | Description                                                    |
+| --------------------------- | ----- | -------------------------------------------------------------- |
+| `--parameter-file <f>`      | `-P`  | Parameter file                                                 |
+| `--prompt <text>`           | `-p`  | Prompt text                                                    |
+| `--prompt-file <f>`         | `-f`  | Prompt file                                                    |
+| `--negative-prompt <t>`     | `-n`  | Negative prompt text                                           |
+| `--negative-prompt-file`    | `-N`  | Negative prompt file                                           |
+| `--image <path>`            | `-i`  | Input image for img2img                                        |
+| `--enhance [<preset>]`      | `-e`  | Enhance the prompt via an LLM; default preset z-image          |
+| `--enhance-instruction`     | `-E`  | Ad-hoc enhancement instruction; alone it means custom mode     |
+| `--enhance-provider <p>`    | `-R`  | Provider profile from the prompt-enhancer config               |
+| `--enhance-model <m>`       | `-M`  | Model name for the enhancement provider                        |
+| `--enhance-language <l>`    | `-L`  | Output language of the enhanced prompt: en (default) or zh     |
+| `--enhance-once`            |       | Enhance once and generate directly, no interactive loop        |
+| `--enhance-only`            |       | Print the enhanced prompt to stdout, skip generation           |
+| `--interrogate [<path>]`    | `-I`  | Reconstruct the prompt from an image; bare flag uses `--image` |
+| `--interrogate-preset`      |       | image-interrogator preset; default faithful                    |
+| `--interrogate-instruction` |       | Ad-hoc instruction appended to the interrogation preset        |
+| `--interrogate-provider`    |       | Provider profile from the image-interrogator config            |
+| `--interrogate-model`       |       | Model name for the interrogation provider                      |
+| `--interrogate-language`    |       | Language of the reconstructed prompt: en (default) or zh       |
+| `--interrogate-explicit`    |       | Describe adult and explicit elements accurately, not softened  |
+| `--interrogate-once`        |       | Interrogate once and proceed, no interactive loop              |
+| `--interrogate-only`        |       | Print the reconstructed prompt to stdout, skip generation      |
+| `--model <model>`           | `-m`  | Model; overrides the parameter file; required without one      |
+| `--seed <n>`                | `-s`  | Random seed; overrides the parameter file; random when omitted |
+| `--output <dir>`            | `-o`  | Output directory; created when missing; default: current dir   |
+| `--dry-run`                 |       | Print the command without executing it                         |
+| Arguments after `--`        |       | Passed through to `draw-things-cli generate` verbatim          |
 
 ## Name Resolution Rules
 
@@ -95,11 +113,12 @@ dtgen -P example -p "test" --dry-run
 
 ## Prompt Resolution Order
 
-1. `--prompt` (mutually exclusive with `--prompt-file`; giving both is an error)
-2. `--prompt-file`
-3. `prompt` in the parameter file
-4. `prompts/default.txt`
-5. Error when none of the above exists
+1. `--interrogate` (the prompt is reconstructed from the image; mutually exclusive with the next two)
+2. `--prompt` (mutually exclusive with `--prompt-file`; giving both is an error)
+3. `--prompt-file`
+4. `prompt` in the parameter file
+5. `prompts/default.txt`
+6. Error when none of the above exists
 
 `prompt_prefix` / `prompt_suffix` from the parameter file are joined to the final prompt with `, ` —\
 a suitable place for LoRA trigger words or fixed quality terms.\
@@ -191,6 +210,54 @@ When stdin is not a terminal, or `--enhance-once` is given, a single enhancement
 | `vinyl-toy`           | Style   | Cute 3D Pop Mart vinyl toy style       |
 | `wabi-sabi-minimal`   | Style   | Wabi-sabi architectural minimalism     |
 
+## Image Interrogation
+
+`--interrogate` / `-I` reconstructs the prompt from an image with a vision LLM and uses the result as this run's prompt, so an image can be reproduced, varied, or used as the starting point of an enhancement.\
+The presets, the language handling, the provider backends and the fallback chain live in the [image-to-text-interrogator](https://github.com/Wujidadi/image-to-text-interrogator) package;\
+`dtgen` only adds the interactive review loop and the `[interrogator]` parameter-file section.\
+Without any configuration the backend is a local [ollama](https://ollama.com) service at `http://localhost:11434` with `qwen3.6:35b`;\
+other local or cloud backends (an ollama server on the LAN, ollama cloud, WaveSpeed, Anthropic, the Claude Code CLI) are selected through provider profiles in `~/.config/image-interrogator/config.toml` (see the package README for the file format and the supported provider types).\
+Profile precedence: `--interrogate-provider` > the parameter file's `[interrogator]` `provider` > the package config's `default_provider` > the built-in `ollama` profile.\
+Model precedence: `--interrogate-model` > the parameter file's `[interrogator]` `model` > the profile's `model`.
+
+### Input and Options
+
+- `-I <path>` names the image to interrogate;\
+  `-I` alone interrogates the `--image` input of an img2img run (an error without `--image`).\
+  Interrogation never runs on its own:\
+  an img2img run without `--prompt` still resolves the prompt the usual way, so the tool never second-guesses what the input image is for.
+- `--interrogate-preset` selects the package preset (`faithful` by default, `concise` for a short prompt, `tags` for a Danbooru-style tag line for anime models; user presets under `~/.config/image-interrogator/interrogators/` shadow the bundled ones).
+- `--interrogate-instruction` appends an ad-hoc requirement to the preset, e.g. "focus on the clothing".
+- `--interrogate-language` selects `en` or `zh` (Simplified Chinese, for the same reason as the enhancer);\
+  precedence: flag > `[interrogator]` `language` > the package config's `language` > `en`.
+- `--interrogate-explicit` asks for adult and sexually explicit elements to be described accurately;\
+  it only helps on models willing to do so (an uncensored local model, for instance), and a refusal ends the run with the model's message.
+
+### Interactive Loop
+
+When stdin is a terminal (and neither `--interrogate-only` nor `--interrogate-once` is given), each interrogation round prints the result and asks for the next action:
+
+- `g` — generate with the current prompt
+- `r` — interrogate the image again (a new sample from the model)
+- `i` — enter a new ad-hoc instruction, then interrogate again
+- `e` — hand the current prompt to the enhancer (the `--enhance` flags apply; the default enhancer preset when none is given), then come back to this menu with the enhanced prompt
+- `q` — quit without generating (exit status 0)
+
+When stdin is not a terminal, or `--interrogate-once` is given, a single interrogation runs and the flow proceeds directly.\
+A failure on the first interrogation ends the run;\
+a failure on a later round keeps the previous prompt and asks again.
+
+### Notes on Behavior
+
+- `--interrogate-only` prints the final prompt to stdout and exits;\
+  no model, parameter file, or output path is required.\
+  When `--enhance` flags are also given, the enhancement runs first and the enhanced prompt is what gets printed.
+- `--interrogate-only` and `--interrogate-once` require `--interrogate`.
+- Interrogation and enhancement chain naturally:\
+  `-I photo.png --enhance ghibli-watercolor` reconstructs the prompt, then restyles it.
+- The reconstructed prompt is the bare prompt;\
+  `prompt_prefix` / `prompt_suffix` are joined afterwards, and the negative prompt is never touched.
+
 ## Seed and Output File Name
 
 - Seed precedence: `--seed` > `seed` in the parameter file > randomly generated.\
@@ -281,6 +348,26 @@ every other key is passed to the package as an override on top of that profile.
 | `api_key_env` | string | Environment variable holding the API key (cloud providers)                           |
 | `timeout`     | int    | Request timeout in seconds, default 300                                              |
 | `extra`       | table  | Merged verbatim into the request body (vendor options)                               |
+
+### `[interrogator]` — Image Interrogation Backend
+
+Optional.\
+`provider` selects a profile from the package config file (`~/.config/image-interrogator/config.toml`; the built-in `ollama` profile when omitted);\
+`preset` and `explicit` set the interrogation options;\
+every other key is passed to the package as an override on top of the profile.
+
+| Key           | Type    | Description                                                                              |
+| ------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `provider`    | string  | Profile name, e.g. `ollama`, or one defined in the config; `--interrogate-provider` wins |
+| `language`    | string  | Output language, en or zh; `--interrogate-language` wins                                 |
+| `preset`      | string  | Interrogation preset, default faithful; `--interrogate-preset` wins                      |
+| `explicit`    | boolean | Describe adult content accurately, default false; `--interrogate-explicit` wins          |
+| `type`        | string  | Override the profile's type: `ollama`, `openai`, `wavespeed`, `anthropic`, `claude-code` |
+| `model`       | string  | Override the profile's model name; `--interrogate-model` wins                            |
+| `url`         | string  | Override the profile's endpoint URL                                                      |
+| `api_key_env` | string  | Environment variable holding the API key (cloud providers)                               |
+| `timeout`     | int     | Request timeout in seconds, default 300                                                  |
+| `extra`       | table   | Merged verbatim into the request body (vendor options)                                   |
 
 ### `[backend]` — Execution Backend
 
